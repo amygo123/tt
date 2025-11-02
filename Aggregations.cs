@@ -4,18 +4,19 @@ using System.Linq;
 
 namespace StyleWatcherWin
 {
-    /// <summary>
-    /// 纯计算：销量/库存聚合、补零、移动平均、DoC、预警
-    /// 与 UI 解耦，便于单测与复用
-    /// </summary>
     public static class Aggregations
     {
-        // ==== 销售 ====
         public sealed class SalesItem
         {
             public DateTime Date { get; set; }
             public string Size { get; set; } = "";
             public string Color { get; set; } = "";
+            public int Qty { get; set; }
+        }
+
+        public sealed class CategoryAgg
+        {
+            public string Key { get; set; } = "";
             public int Qty { get; set; }
         }
 
@@ -52,17 +53,16 @@ namespace StyleWatcherWin
             return res.ToList();
         }
 
-        public static List<(string key, int qty)> BySize(IEnumerable<SalesItem> records)
+        public static List<CategoryAgg> BySize(IEnumerable<SalesItem> records)
             => records.GroupBy(r => r.Size ?? "")
-                      .Select(g => (g.Key, g.Sum(x => x.Qty)))
-                      .OrderByDescending(x => x.Item2).ToList();
+                      .Select(g => new CategoryAgg { Key = g.Key, Qty = g.Sum(x => x.Qty) })
+                      .OrderByDescending(x => x.Qty).ToList();
 
-        public static List<(string key, int qty)> ByColor(IEnumerable<SalesItem> records)
+        public static List<CategoryAgg> ByColor(IEnumerable<SalesItem> records)
             => records.GroupBy(r => r.Color ?? "")
-                      .Select(g => (g.Key, g.Sum(x => x.Qty)))
-                      .OrderByDescending(x => x.Item2).ToList();
+                      .Select(g => new CategoryAgg { Key = g.Key, Qty = g.Sum(x => x.Qty) })
+                      .OrderByDescending(x => x.Qty).ToList();
 
-        // ==== 库存 & 预警（骨架，提交2补全联动） ====
         public sealed class InventoryThresholds
         {
             public int DocRed { get; set; } = 3;
@@ -73,7 +73,7 @@ namespace StyleWatcherWin
         public static double DailyAvgFromLast7(IEnumerable<SalesItem> records)
         {
             var last7 = records.Where(r => r.Date >= DateTime.Today.AddDays(-6)).Sum(r => r.Qty);
-            return Math.Max(last7 / 7.0, 0.01); // 防除零
+            return Math.Max(last7 / 7.0, 0.01);
         }
 
         public static int DaysOfCover(int available, double dailyAvg)
