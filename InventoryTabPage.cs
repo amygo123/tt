@@ -10,14 +10,13 @@ using System.Windows.Forms;
 namespace StyleWatcherWin
 {
     /// <summary>
-    /// 库存页（仅表格）：调用 GET {cfg.inventory.url_base}{style} ，右侧展示结构化数据
+    /// 库存页：自动按配置拉取默认款式；顶部无输入/刷新；
+    /// 中部是一个 TabControl：第一个“汇总”，其后为各分仓 Tab（按总可用量降序排列）。
     /// </summary>
     public class InventoryTabPage : TabPage
     {
-        private readonly TextBox _txtQuery = new TextBox();
-        private readonly Button _btnRefresh = new Button();
-        private readonly DataGridView _grid = new DataGridView();
         private readonly AppConfig _cfg;
+        private readonly TabControl _tabs = new TabControl();
 
         public InventoryTabPage(AppConfig cfg)
         {
@@ -26,49 +25,23 @@ namespace StyleWatcherWin
             BackColor = System.Drawing.Color.White;
 
             BuildUI();
-            _txtQuery.Text = cfg.inventory?.default_style ?? "";
             _ = RefreshAsync();
         }
 
         private void BuildUI()
         {
-            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(12) };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            Controls.Add(root);
-
-            var bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Padding = new Padding(0) };
-            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            var lbl = new Label { Text = "款式路径：", AutoSize = true, Padding = new Padding(0, 10, 6, 0) };
-            _txtQuery.Dock = DockStyle.Fill;
-            _btnRefresh.Text = "刷新";
-            _btnRefresh.AutoSize = true; _btnRefresh.AutoSizeMode = AutoSizeMode.GrowAndShrink; _btnRefresh.Padding = new Padding(10, 4, 10, 4);
-            _btnRefresh.Click += async (s, e) => await RefreshAsync();
-            bar.Controls.Add(lbl, 0, 0);
-            bar.Controls.Add(_txtQuery, 1, 0);
-            bar.Controls.Add(_btnRefresh, 2, 0);
-            root.Controls.Add(bar, 0, 0);
-
-            // 仅表格
-            _grid.Dock = DockStyle.Fill;
-            _grid.ReadOnly = true;
-            _grid.AllowUserToAddRows = false;
-            _grid.AllowUserToDeleteRows = false;
-            _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells;
-            _grid.DataSource = new List<Row>();
-            root.Controls.Add(_grid, 0, 1);
+            _tabs.Dock = DockStyle.Fill;
+            Controls.Add(_tabs);
         }
 
         private async Task RefreshAsync()
         {
             try
             {
-                var style = _txtQuery.Text?.Trim() ?? string.Empty;
+                var style = _cfg.inventory?.default_style ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(style))
                 {
-                    MessageBox.Show("请输入款式路径，如：纯色/通纯棉圆领短T/黑/XL", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("appsettings.json 未配置 inventory.default_style。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
@@ -84,16 +57,67 @@ namespace StyleWatcherWin
                 resp.EnsureSuccessStatusCode();
                 var raw = await resp.Content.ReadAsStringAsync();
 
-                // 解析并绑定
+                // 解析
                 var lines = CleanLines(raw).ToList();
                 var rows = ParseRows(lines);
-                _grid.DataSource = rows;
+
+                // 构建动态子 Tab
+                BuildDynamicTabs(rows);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"请求失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _grid.DataSource = new List<Row>();
+                MessageBox.Show($"库存请求失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void BuildDynamicTabs(List<Row> rows)
+        {
+            _tabs.TabPages.Clear();
+
+            // 汇总：按 颜色+尺码 聚合
+            var summary = rows
+                .GroupBy(r => new { r.颜色, r.尺码 })
+                .Select(g => new Row
+                {
+                    品名 = "汇总",
+                    颜色 = g.Key.颜色,
+                    尺码 = g.Key.尺码,
+                    仓库 = "ALL",
+                    可用 = g.Sum(x => x.可用),
+                    现有 = g.Sum(x => x.现有)
+                })
+                .OrderByDescending(r => r.可用)
+                .ToList();
+
+            _tabs.TabPages.Add(CreateGridTab("汇总", summary));
+
+            // 分仓：按仓库拆分，并按各仓总可用量降序排序 Tab 顺序
+            var byStore = rows.GroupBy(r => r.仓库)
+                              .Select(g => new { 仓库 = g.Key, 行 = g.ToList(), 总可用 = g.Sum(x => x.可用) })
+                              .OrderByDescending(x => x.总可用)
+                              .ToList();
+            foreach (var st in byStore)
+            {
+                // 每个仓库内按 可用 降序
+                var sorted = st.行.OrderByDescending(x => x.可用).ToList();
+                _tabs.TabPages.Add(CreateGridTab(st.仓库, sorted));
+            }
+        }
+
+        private TabPage CreateGridTab(string title, List<Row> data)
+        {
+            var page = new TabPage(title) { BackColor = System.Drawing.Color.White };
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells,
+                DataSource = data
+            };
+            page.Controls.Add(grid);
+            return page;
         }
 
         private static IEnumerable<string> CleanLines(string raw)
@@ -116,8 +140,8 @@ namespace StyleWatcherWin
 
             return items
                 .Select(s => s.Trim().Trim('"')
-                    .Replace(", ", "，").Replace(",", "，")
-                    .Replace(" ,", "，"))
+                    .Replace(", ", "，").Replace(",", " ，")) // 暂用窄空格占位，避免重复替换
+                .Select(s => s.Replace(" ，", "，"))
                 .Where(s => !string.IsNullOrWhiteSpace(s))
                 .Distinct()
                 .OrderBy(s => s);
@@ -129,18 +153,22 @@ namespace StyleWatcherWin
             foreach (var ln in lines)
             {
                 var parts = ln.Split('，').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
-                if (parts.Length < 4) continue; // 起码有 品名/颜色/尺码/仓库
+                if (parts.Length < 4) continue; // 至少 品名/颜色/尺码/仓库
                 int available = 0, onhand = 0;
                 if (parts.Length >= 6)
                 {
-                    int.TryParse(parts[parts.Length - 2], out available);
-                    int.TryParse(parts[parts.Length - 1], out onhand);
+                    int.TryParse(parts[^2], out available);
+                    int.TryParse(parts[^1], out onhand);
                 }
-                var name = parts[0];
-                var color = parts.Length > 1 ? parts[1] : "";
-                var size = parts.Length > 2 ? parts[2] : "";
-                var store = parts.Length > 3 ? parts[3] : "";
-                result.Add(new Row { 品名 = name, 颜色 = color, 尺码 = size, 仓库 = store, 可用 = available, 现有 = onhand });
+                result.Add(new Row
+                {
+                    品名 = parts[0],
+                    颜色 = parts.Length > 1 ? parts[1] : "",
+                    尺码 = parts.Length > 2 ? parts[2] : "",
+                    仓库 = parts.Length > 3 ? parts[3] : "",
+                    可用 = available,
+                    现有 = onhand
+                });
             }
             return result;
         }

@@ -29,13 +29,14 @@ namespace StyleWatcherWin
         private readonly TextBox _input = new TextBox();
         private readonly Button _btnQuery = new Button();
         private readonly Button _btnExport = new Button();
+        // 仍保留字段以兼容 TrayApp 的 SetLoading/Bind 调用，但不再添加到 UI
         private readonly Label _lblTitle = new Label();
         private readonly Label _lblSummary = new Label();
         private readonly TabControl _tabs = new TabControl();
 
         private PlotView _plot7d = new PlotView();
-        private PlotView _plotSizeTop = new PlotView();
-        private PlotView _plotColorTop = new PlotView();
+        private PlotView _plotSize = new PlotView();
+        private PlotView _plotColor = new PlotView();
 
         private DataGridView _grid = new DataGridView();
         private BindingSource _binding = new BindingSource();
@@ -56,12 +57,12 @@ namespace StyleWatcherWin
             Width = _cfg.window.width;
             Height = _cfg.window.height;
 
-            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.White };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Color.White };
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64)); // 顶栏
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // 内容
             Controls.Add(root);
 
+            // 顶栏
             var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Padding = new Padding(12,10,12,6), BackColor = UIStyle.HeaderBack };
             top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             top.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -79,36 +80,31 @@ namespace StyleWatcherWin
             top.Controls.Add(_btnExport, 2, 0);
             root.Controls.Add(top, 0, 0);
 
-            var info = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(12) };
-            _lblTitle.Font = UIStyle.H1;
-            _lblTitle.ForeColor = UIStyle.TextDark;
-            _lblSummary.Font = UIStyle.Body;
-            info.Controls.Add(_lblTitle, 0, 0);
-            info.Controls.Add(_lblSummary, 0, 1);
-            root.Controls.Add(info, 0, 1);
-
+            // Tabs
             _tabs.Dock = DockStyle.Fill;
-            root.Controls.Add(_tabs, 0, 2);
+            root.Controls.Add(_tabs, 0, 1);
 
             BuildTabs();
         }
 
         private void BuildTabs()
         {
+            // 概览页
             var pageOverview = new TabPage("概览") { BackColor = Color.White };
             var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(12) };
             panel.RowStyles.Add(new RowStyle(SizeType.Percent, 34));
             panel.RowStyles.Add(new RowStyle(SizeType.Percent, 33));
             panel.RowStyles.Add(new RowStyle(SizeType.Percent, 33));
             _plot7d.Dock = DockStyle.Fill;
-            _plotSizeTop.Dock = DockStyle.Fill;
-            _plotColorTop.Dock = DockStyle.Fill;
+            _plotSize.Dock = DockStyle.Fill;
+            _plotColor.Dock = DockStyle.Fill;
             panel.Controls.Add(_plot7d, 0, 0);
-            panel.Controls.Add(_plotSizeTop, 0, 1);
-            panel.Controls.Add(_plotColorTop, 0, 2);
+            panel.Controls.Add(_plotSize, 0, 1);
+            panel.Controls.Add(_plotColor, 0, 2);
             pageOverview.Controls.Add(panel);
             _tabs.TabPages.Add(pageOverview);
 
+            // 销售明细
             var pageDetail = new TabPage("销售明细") { BackColor = Color.White };
             var panelDetail = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(12) };
             panelDetail.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
@@ -127,74 +123,28 @@ namespace StyleWatcherWin
             pageDetail.Controls.Add(panelDetail);
             _tabs.TabPages.Add(pageDetail);
 
+            // 库存页
             _tabs.TabPages.Add(new InventoryTabPage(_cfg));
         }
 
-        // ===== TrayApp 依赖的方法 =====
-        public void FocusInput()
-        {
-            try { if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal; _input.Focus(); _input.SelectAll(); }
-            catch { }
-        }
+        // 公开方法（TrayApp 调用保持兼容）
+        public void FocusInput(){ try{ if(WindowState==FormWindowState.Minimized) WindowState=FormWindowState.Normal; _input.Focus(); _input.SelectAll(); }catch{} }
+        public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.Max(0,pt.X-Width/2),Math.Max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
+        public void ShowAndFocusCentered(){ try{ StartPosition=FormStartPosition.CenterScreen; Show(); Activate(); FocusInput(); }catch{ Show(); } }
+        public void ShowAndFocusCentered(bool alwaysOnTop){ TopMost=alwaysOnTop; ShowAndFocusCentered(); }
+        public void SetLoading(string message){ _lblTitle.Text=message??""; _lblSummary.Text=""; _tabs.Enabled=false; Refresh(); }
+        public void SetLoading(bool busy, string? message=null){ _lblTitle.Text=message??(busy?"加载中…":""); _lblSummary.Text=""; _tabs.Enabled=!busy; Refresh(); }
+        public async void ApplyRawText(string selection, string parsed){ _input.Text=selection??string.Empty; await LoadTextAsync(parsed??string.Empty); }
+        public void ApplyRawText(string text){ _input.Text=text??string.Empty; }
 
-        public void ShowNoActivateAtCursor()
-        {
-            try
-            {
-                StartPosition = FormStartPosition.Manual;
-                var pt = Cursor.Position;
-                Location = new Point(Math.Max(0, pt.X - Width / 2), Math.Max(0, pt.Y - Height / 2));
-                Show();
-            }
-            catch { Show(); }
-        }
-
-        public void ShowAndFocusCentered()
-        {
-            try { StartPosition = FormStartPosition.CenterScreen; Show(); Activate(); FocusInput(); }
-            catch { Show(); }
-        }
-
-        public void ShowAndFocusCentered(bool alwaysOnTop)
-        {
-            TopMost = alwaysOnTop;
-            ShowAndFocusCentered();
-        }
-
-        public void SetLoading(string message)
-        {
-            _lblTitle.Text = message ?? "";
-            _lblSummary.Text = "";
-            _tabs.Enabled = false;
-            Refresh();
-        }
-
-        public void SetLoading(bool busy, string? message = null)
-        {
-            _lblTitle.Text = message ?? (busy ? "加载中…" : "");
-            _lblSummary.Text = "";
-            _tabs.Enabled = !busy;
-            Refresh();
-        }
-
-        public async void ApplyRawText(string selection, string parsed)
-        {
-            _input.Text = selection ?? string.Empty;
-            await LoadTextAsync(parsed ?? string.Empty);
-        }
-
-        public void ApplyRawText(string text) { _input.Text = text ?? string.Empty; }
-
-        // ===== 加载/绑定 =====
-        public async System.Threading.Tasks.Task LoadTextAsync(string raw) => await ReloadAsync(raw);
-        private async System.Threading.Tasks.Task ReloadAsync() => await ReloadAsync(_input.Text);
-
+        // 数据绑定
+        public async System.Threading.Tasks.Task LoadTextAsync(string raw)=>await ReloadAsync(raw);
+        private async System.Threading.Tasks.Task ReloadAsync()=>await ReloadAsync(_input.Text);
         private async System.Threading.Tasks.Task ReloadAsync(string displayText)
         {
-            _lblTitle.Text = "…加载中";
+            _lblTitle.Text = "";
             _lblSummary.Text = "";
             await System.Threading.Tasks.Task.Yield();
-
             var parsed = StyleWatcherWin.PayloadParser.Parse(displayText);
             Bind(parsed);
             _tabs.Enabled = true;
@@ -202,10 +152,10 @@ namespace StyleWatcherWin
 
         private void Bind(ParsedPayload p)
         {
-            _lblTitle.Text = p.Title;
-            _lblSummary.Text = $"{p.Yesterday}；近7天合计：{p.Sum7d}";
+            // 图表
             RenderCharts(p);
 
+            // 明细绑定
             _binding.DataSource = p.Records.Select(r => new
             {
                 日期 = r.Date.ToString("yyyy-MM-dd"),
@@ -214,6 +164,7 @@ namespace StyleWatcherWin
                 颜色 = r.Color,
                 数量 = r.Qty
             }).ToList();
+
             _grid.ClearSelection();
         }
 
@@ -241,9 +192,12 @@ namespace StyleWatcherWin
 
         private void RenderCharts(ParsedPayload p)
         {
-            // 近7天趋势：DateTimeAxis
-            var trend = p.Records.GroupBy(r => r.Date.Date).OrderBy(g => g.Key)
-                .Select(g => new { Day = g.Key, Qty = g.Sum(x => x.Qty) }).ToList();
+            // 近7天趋势
+            var trend = p.Records
+                .GroupBy(r => r.Date.Date)
+                .OrderBy(g => g.Key)
+                .Select(g => new { Day = g.Key, Qty = g.Sum(x => x.Qty) })
+                .ToList();
 
             var modelTrend = new PlotModel { Title = "近 7 天总销量趋势" };
             var xAxis = new DateTimeAxis { Position = AxisPosition.Bottom, StringFormat = "MM-dd", IntervalType = DateTimeIntervalType.Days, MinorIntervalType = DateTimeIntervalType.Days };
@@ -254,23 +208,25 @@ namespace StyleWatcherWin
             modelTrend.Series.Add(s1);
             _plot7d.Model = modelTrend;
 
-            // 尺码 Top10
-            var sizeTop = p.Records.GroupBy(r => r.Size).Select(g => new { Key = g.Key, Qty = g.Sum(x => x.Qty) })
-                .OrderByDescending(x => x.Qty).Take(10).ToList();
-            var modelSize = new PlotModel { Title = "尺码 Top 10" };
-            modelSize.Axes.Add(new CategoryAxis { Position = AxisPosition.Left, ItemsSource = sizeTop, LabelField = "Key" });
-            modelSize.Axes.Add(new LinearAxis { Position = AxisPosition.Bottom, MinimumPadding = 0, AbsoluteMinimum = 0 });
-            modelSize.Series.Add(new BarSeries { ItemsSource = sizeTop.Select(x => new BarItem { Value = x.Qty }) });
-            _plotSizeTop.Model = modelSize;
+            // 尺码：展示全量，按销量降序
+            var sizeAgg = p.Records.GroupBy(r => r.Size).Select(g => new { Key = g.Key, Qty = g.Sum(x => x.Qty) })
+                .OrderByDescending(x => x.Qty).ToList();
+            var modelSize = new PlotModel { Title = "各尺码销量（降序，全部）" };
+            var sizeAxis = new CategoryAxis { Position = AxisPosition.Left, ItemsSource = sizeAgg, LabelField = "Key" };
+            var sizeVal = new LinearAxis { Position = AxisPosition.Bottom, MinimumPadding = 0, AbsoluteMinimum = 0 };
+            modelSize.Axes.Add(sizeAxis); modelSize.Axes.Add(sizeVal);
+            modelSize.Series.Add(new BarSeries { ItemsSource = sizeAgg.Select(x => new BarItem { Value = x.Qty }) });
+            _plotSize.Model = modelSize;
 
-            // 颜色 Top10
-            var colorTop = p.Records.GroupBy(r => r.Color).Select(g => new { Key = g.Key, Qty = g.Sum(x => x.Qty) })
-                .OrderByDescending(x => x.Qty).Take(10).ToList();
-            var modelColor = new PlotModel { Title = "颜色 Top 10" };
-            modelColor.Axes.Add(new CategoryAxis { Position = AxisPosition.Left, ItemsSource = colorTop, LabelField = "Key" });
-            modelColor.Axes.Add(new LinearAxis { Position = AxisPosition.Bottom, MinimumPadding = 0, AbsoluteMinimum = 0 });
-            modelColor.Series.Add(new BarSeries { ItemsSource = colorTop.Select(x => new BarItem { Value = x.Qty }) });
-            _plotColorTop.Model = modelColor;
+            // 颜色：展示全量，按销量降序
+            var colorAgg = p.Records.GroupBy(r => r.Color).Select(g => new { Key = g.Key, Qty = g.Sum(x => x.Qty) })
+                .OrderByDescending(x => x.Qty).ToList();
+            var modelColor = new PlotModel { Title = "各颜色销量（降序，全部）" };
+            var colorAxis = new CategoryAxis { Position = AxisPosition.Left, ItemsSource = colorAgg, LabelField = "Key" };
+            var colorVal = new LinearAxis { Position = AxisPosition.Bottom, MinimumPadding = 0, AbsoluteMinimum = 0 };
+            modelColor.Axes.Add(colorAxis); modelColor.Axes.Add(colorVal);
+            modelColor.Series.Add(new BarSeries { ItemsSource = colorAgg.Select(x => new BarItem { Value = x.Qty }) });
+            _plotColor.Model = modelColor;
         }
 
         private void ExportExcel()
