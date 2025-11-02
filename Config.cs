@@ -19,6 +19,10 @@ namespace StyleWatcherWin
         public Headers headers { get; set; } = new Headers();
         public InventoryCfg inventory { get; set; } = new InventoryCfg();
 
+        // ==== 新增：UI & 库存预警配置（保持可选，兼容旧版） ====
+        public UiCfg ui { get; set; } = new UiCfg();
+        public InventoryAlertCfg inventoryAlert { get; set; } = new InventoryAlertCfg();
+
         public class WindowCfg
         {
             public int width { get; set; } = 560;
@@ -33,6 +37,19 @@ namespace StyleWatcherWin
         {
             public string url_base { get; set; } = "http://192.168.40.97:8000/inventory?style_name=";
             public string default_style { get; set; } = "纯色/通纯棉圆领短T/黑/XL";
+        }
+
+        public class UiCfg
+        {
+            public int[] trendWindows { get; set; } = new[] { 7, 14, 30 };
+            public bool showMovingAverage { get; set; } = true;
+        }
+
+        public class InventoryAlertCfg
+        {
+            public int docRed { get; set; } = 3;
+            public int docYellow { get; set; } = 7;
+            public int minSalesWindowDays { get; set; } = 7;
         }
 
         public static string ConfigPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
