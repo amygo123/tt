@@ -149,7 +149,7 @@ namespace StyleWatcherWin
             _tabs.TabPages.Add(new InventoryTabPage(_cfg));
         }
 
-        // ========== TrayApp 需要的几个公共方法（补齐） ==========
+        // ===== TrayApp 依赖的方法（补齐与签名对齐） =====
 
         /// <summary>把焦点放到输入框</summary>
         public void FocusInput()
@@ -163,7 +163,7 @@ namespace StyleWatcherWin
             catch { }
         }
 
-        /// <summary>在鼠标附近显示，不抢焦点（尽量接近原语义）</summary>
+        /// <summary>在鼠标附近显示（WinForms 无“不激活”API，尽量接近语义）</summary>
         public void ShowNoActivateAtCursor()
         {
             try
@@ -171,7 +171,7 @@ namespace StyleWatcherWin
                 StartPosition = FormStartPosition.Manual;
                 var pt = Cursor.Position;
                 Location = new Point(Math.Max(0, pt.X - Width / 2), Math.Max(0, pt.Y - Height / 2));
-                Show();          // WinForms 无直接 "不激活" 显示；若有自定义 Win32，可再优化
+                Show();
             }
             catch { Show(); }
         }
@@ -189,7 +189,14 @@ namespace StyleWatcherWin
             catch { Show(); }
         }
 
-        /// <summary>设置“加载中/状态提示”文字（TrayApp 在请求前后会调用）</summary>
+        /// <summary>与 TrayApp 调用匹配：ShowAndFocusCentered(bool alwaysOnTop)</summary>
+        public void ShowAndFocusCentered(bool alwaysOnTop)
+        {
+            TopMost = alwaysOnTop;
+            ShowAndFocusCentered();
+        }
+
+        /// <summary>设置“加载中/状态提示”文字（TrayApp 在请求前后调用）</summary>
         public void SetLoading(string message)
         {
             _lblTitle.Text = message ?? "";
@@ -198,8 +205,8 @@ namespace StyleWatcherWin
             Refresh();
         }
 
-        /// <summary>兼容另一种签名：SetLoading(bool busy, string? message = null)</summary>
-        public void SetLoading(bool busy, string? message = null)
+        /// <summary>兼容另一种签名：SetLoading(bool busy, string message = null)</summary>
+        public void SetLoading(bool busy, string message = null)
         {
             _lblTitle.Text = message ?? (busy ? "加载中…" : "");
             _lblSummary.Text = "";
@@ -207,29 +214,41 @@ namespace StyleWatcherWin
             Refresh();
         }
 
-        /// <summary>把文本写入输入框（TrayApp 捕获选区后调用）</summary>
+        /// <summary>把捕获的选区与解析结果应用到界面（TrayApp 调用）</summary>
+        public async void ApplyRawText(string selection, string parsed)
+        {
+            _input.Text = selection ?? string.Empty;
+            await LoadTextAsync(parsed ?? string.Empty);
+        }
+
+        /// <summary>保留旧单参版本</summary>
         public void ApplyRawText(string text)
         {
             _input.Text = text ?? string.Empty;
         }
 
-        // ==========================================================
+        // ===========================
 
         // 外部调用：载入文本并渲染
         public async System.Threading.Tasks.Task LoadTextAsync(string raw)
         {
-            _input.Text = raw;
-            await ReloadAsync();
+            // 注意：这里的 raw 是“已解析文本”（来自接口或手动输入）
+            await ReloadAsync(raw);
         }
 
         private async System.Threading.Tasks.Task ReloadAsync()
         {
-            var text = _input.Text;
+            // 兼容旧调用：用输入框当前文本作为“原始/已解析文本”
+            await ReloadAsync(_input.Text);
+        }
+
+        private async System.Threading.Tasks.Task ReloadAsync(string displayText)
+        {
             _lblTitle.Text = "…加载中";
             _lblSummary.Text = "";
             await System.Threading.Tasks.Task.Yield();
 
-            var parsed = StyleWatcherWin.Parser.Parse(text); // 显式命名空间，避免解析不到
+            var parsed = StyleWatcherWin.PayloadParser.Parse(displayText); // 显式命名空间
             Bind(parsed);
             _tabs.Enabled = true;
         }
