@@ -149,6 +149,72 @@ namespace StyleWatcherWin
             _tabs.TabPages.Add(new InventoryTabPage(_cfg));
         }
 
+        // ========== TrayApp 需要的几个公共方法（补齐） ==========
+
+        /// <summary>把焦点放到输入框</summary>
+        public void FocusInput()
+        {
+            try
+            {
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+                _input.Focus();
+                _input.SelectAll();
+            }
+            catch { }
+        }
+
+        /// <summary>在鼠标附近显示，不抢焦点（尽量接近原语义）</summary>
+        public void ShowNoActivateAtCursor()
+        {
+            try
+            {
+                StartPosition = FormStartPosition.Manual;
+                var pt = Cursor.Position;
+                Location = new Point(Math.Max(0, pt.X - Width / 2), Math.Max(0, pt.Y - Height / 2));
+                Show();          // WinForms 无直接 "不激活" 显示；若有自定义 Win32，可再优化
+            }
+            catch { Show(); }
+        }
+
+        /// <summary>居中显示并把焦点置于输入框</summary>
+        public void ShowAndFocusCentered()
+        {
+            try
+            {
+                StartPosition = FormStartPosition.CenterScreen;
+                Show();
+                Activate();
+                FocusInput();
+            }
+            catch { Show(); }
+        }
+
+        /// <summary>设置“加载中/状态提示”文字（TrayApp 在请求前后会调用）</summary>
+        public void SetLoading(string message)
+        {
+            _lblTitle.Text = message ?? "";
+            _lblSummary.Text = "";
+            _tabs.Enabled = false;
+            Refresh();
+        }
+
+        /// <summary>兼容另一种签名：SetLoading(bool busy, string? message = null)</summary>
+        public void SetLoading(bool busy, string? message = null)
+        {
+            _lblTitle.Text = message ?? (busy ? "加载中…" : "");
+            _lblSummary.Text = "";
+            _tabs.Enabled = !busy;
+            Refresh();
+        }
+
+        /// <summary>把文本写入输入框（TrayApp 捕获选区后调用）</summary>
+        public void ApplyRawText(string text)
+        {
+            _input.Text = text ?? string.Empty;
+        }
+
+        // ==========================================================
+
         // 外部调用：载入文本并渲染
         public async System.Threading.Tasks.Task LoadTextAsync(string raw)
         {
@@ -163,8 +229,9 @@ namespace StyleWatcherWin
             _lblSummary.Text = "";
             await System.Threading.Tasks.Task.Yield();
 
-            var parsed = Parser.Parse(text);
+            var parsed = StyleWatcherWin.Parser.Parse(text); // 显式命名空间，避免解析不到
             Bind(parsed);
+            _tabs.Enabled = true;
         }
 
         private void Bind(ParsedPayload p)
@@ -200,7 +267,7 @@ namespace StyleWatcherWin
                 return;
             }
 
-            // 反射读取匿名类型属性，避免 dynamic 在编译器层面的限制
+            // 反射读取匿名类型属性
             var filtered = current.Where(x =>
             {
                 var t = x.GetType();
