@@ -1,4 +1,3 @@
-<—— 将你现有的 ResultForm.cs 全量替换为下面这一整段 ——>
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -145,6 +144,7 @@ namespace StyleWatcherWin
             panelDetail.Controls.Add(_grid, 0, 1);
             pageDetail.Controls.Add(panelDetail);
             _tabs.TabPages.Add(pageDetail);
+
             // 库存页（新增）
             _tabs.TabPages.Add(new InventoryTabPage(_cfg));
         }
@@ -191,20 +191,26 @@ namespace StyleWatcherWin
         private void ApplyFilter(string q)
         {
             q = (q ?? "").Trim();
-            var list = (IEnumerable<dynamic>)_binding.DataSource;
+            var current = _binding.DataSource as IEnumerable<object>;
+            if (current == null) return;
+
             if (string.IsNullOrWhiteSpace(q))
             {
                 _binding.ResetBindings(false);
                 return;
             }
 
-            var filtered = list.Where(x =>
-                (x.日期?.ToString() ?? "").Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                (x.款式?.ToString() ?? "").Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                (x.尺码?.ToString() ?? "").Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                (x.颜色?.ToString() ?? "").Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                (x.数量?.ToString() ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)
-            ).ToList();
+            // 反射读取匿名类型属性，避免 dynamic 在编译器层面的限制
+            var filtered = current.Where(x =>
+            {
+                var t = x.GetType();
+                string Get(string name) => t.GetProperty(name)?.GetValue(x)?.ToString() ?? "";
+                return Get("日期").Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || Get("款式").Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || Get("尺码").Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || Get("颜色").Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || Get("数量").Contains(q, StringComparison.OrdinalIgnoreCase);
+            }).ToList();
 
             _binding.DataSource = filtered;
             _grid.ClearSelection();
@@ -262,16 +268,20 @@ namespace StyleWatcherWin
             ws1.Cell(1, 4).Value = "颜色";
             ws1.Cell(1, 5).Value = "数量";
 
-            var list = (IEnumerable<dynamic>)_binding.DataSource;
-            int r = 2;
-            foreach (var it in list)
+            var list = _binding.DataSource as IEnumerable<object>;
+            if (list != null)
             {
-                ws1.Cell(r, 1).Value = it.日期;
-                ws1.Cell(r, 2).Value = it.款式;
-                ws1.Cell(r, 3).Value = it.尺码;
-                ws1.Cell(r, 4).Value = it.颜色;
-                ws1.Cell(r, 5).Value = it.数量;
-                r++;
+                int r = 2;
+                foreach (var it in list)
+                {
+                    var t = it.GetType();
+                    ws1.Cell(r, 1).Value = t.GetProperty("日期")?.GetValue(it)?.ToString();
+                    ws1.Cell(r, 2).Value = t.GetProperty("款式")?.GetValue(it)?.ToString();
+                    ws1.Cell(r, 3).Value = t.GetProperty("尺码")?.GetValue(it)?.ToString();
+                    ws1.Cell(r, 4).Value = t.GetProperty("颜色")?.GetValue(it)?.ToString();
+                    ws1.Cell(r, 5).Value = t.GetProperty("数量")?.GetValue(it)?.ToString();
+                    r++;
+                }
             }
             ws1.Columns().AdjustToContents();
 
@@ -279,18 +289,30 @@ namespace StyleWatcherWin
             var ws2 = wb.AddWorksheet("趋势7天");
             ws2.Cell(1, 1).Value = "日期";
             ws2.Cell(1, 2).Value = "数量";
-            var trend = ((IEnumerable<dynamic>)_binding.DataSource)
-                .Select(x => new { 日期 = DateTime.Parse(x.日期), 数量 = int.Parse(x.数量.ToString()) })
-                .GroupBy(x => x.日期.Date)
-                .OrderBy(x => x.Key)
-                .Select(x => new { Day = x.Key.ToString("yyyy-MM-dd"), Qty = x.Sum(y => y.数量) })
-                .ToList();
-            r = 2;
-            foreach (var it in trend)
+
+            var detail = _binding.DataSource as IEnumerable<object>;
+            if (detail != null)
             {
-                ws2.Cell(r, 1).Value = it.Day;
-                ws2.Cell(r, 2).Value = it.Qty;
-                r++;
+                var trend = detail
+                    .Select(x =>
+                    {
+                        var t = x.GetType();
+                        var d = DateTime.Parse(t.GetProperty("日期")?.GetValue(x)?.ToString() ?? DateTime.Now.ToString("yyyy-MM-dd"));
+                        var q = int.Parse(t.GetProperty("数量")?.GetValue(x)?.ToString() ?? "0");
+                        return new { 日期 = d.Date, 数量 = q };
+                    })
+                    .GroupBy(x => x.日期)
+                    .OrderBy(x => x.Key)
+                    .Select(x => new { Day = x.Key.ToString("yyyy-MM-dd"), Qty = x.Sum(y => y.数量) })
+                    .ToList();
+
+                int r = 2;
+                foreach (var it in trend)
+                {
+                    ws2.Cell(r, 1).Value = it.Day;
+                    ws2.Cell(r, 2).Value = it.Qty;
+                    r++;
+                }
             }
             ws2.Columns().AdjustToContents();
 

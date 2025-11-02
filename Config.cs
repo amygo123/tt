@@ -75,7 +75,6 @@ namespace StyleWatcherWin
 
                 foreach (var kv in cfg.headers)
                 {
-                    // "Content-Type" 对于 GET/POST 内容由下方设置；这里只加到请求头
                     if (!string.Equals(kv.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
                         req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
                 }
@@ -96,7 +95,6 @@ namespace StyleWatcherWin
                 resp.EnsureSuccessStatusCode();
                 var raw = await resp.Content.ReadAsStringAsync();
 
-                // 若返回 JSON 有 msg 字段，优先取它
                 try
                 {
                     var doc = JsonDocument.Parse(raw);

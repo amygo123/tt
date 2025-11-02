@@ -87,7 +87,6 @@ namespace StyleWatcherWin
 
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(3, _cfg.timeout_seconds)) };
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                // 附带可选 headers（如有鉴权）
                 foreach (var kv in _cfg.headers)
                     req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
 
@@ -133,7 +132,7 @@ namespace StyleWatcherWin
 
             return items
                 .Select(s => s.Trim().Trim('"')
-                    .Replace(", ", "，").Replace(",", "，")  // 英文逗号→中文逗号
+                    .Replace(", ", "，").Replace(",", "，")
                     .Replace(" ,", "，"))
                 .Where(s => !string.IsNullOrWhiteSpace(s))
                 .Distinct()
@@ -141,10 +140,7 @@ namespace StyleWatcherWin
         }
 
         /// <summary>
-        /// 尝试解析“品名，颜色，尺码，仓库，可用，现有”。对异常样例做容错：
-        /// - 少列：跳过
-        /// - “可用/现有”非数字：按 0 处理
-        /// - 多余列：只取前 6 列
+        /// 解析“品名，颜色，尺码，仓库，可用，现有”，并容错
         /// </summary>
         private static List<Row> ParseRows(IEnumerable<string> lines)
         {
@@ -152,15 +148,13 @@ namespace StyleWatcherWin
             foreach (var ln in lines)
             {
                 var parts = ln.Split('，').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
-                if (parts.Length < 4) continue; // 最少先拿到 品名/颜色/尺码/仓库
-                // 尝试从末尾回溯两个数字
+                if (parts.Length < 4) continue; // 起码有 品名/颜色/尺码/仓库
                 int available = 0, onhand = 0;
                 if (parts.Length >= 6)
                 {
                     int.TryParse(parts[parts.Length - 2], out available);
                     int.TryParse(parts[parts.Length - 1], out onhand);
                 }
-                // 归一成 6 列
                 var name = parts[0];
                 var color = parts.Length > 1 ? parts[1] : "";
                 var size = parts.Length > 2 ? parts[2] : "";
