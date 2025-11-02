@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
+using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace StyleWatcherWin
 {
@@ -13,65 +17,96 @@ namespace StyleWatcherWin
         public string hotkey { get; set; } = "Alt+S";
         public WindowCfg window { get; set; } = new WindowCfg();
         public Headers headers { get; set; } = new Headers();
-        public class WindowCfg { public int width { get; set; } = 900; public int height { get; set; } = 600; public int fontSize { get; set; } = 12; public bool alwaysOnTop { get; set; } = true; }
-        public class Headers { public string Content_Type { get; set; } = "application/json"; }
+        public InventoryCfg inventory { get; set; } = new InventoryCfg();
 
-        public static string ConfigPath => Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        public class WindowCfg
+        {
+            public int width { get; set; } = 560;
+            public int height { get; set; } = 380;
+            public int fontSize { get; set; } = 13;
+            public bool alwaysOnTop { get; set; } = true;
+        }
+
+        public class Headers : Dictionary<string, string> { }
+
+        public class InventoryCfg
+        {
+            public string url_base { get; set; } = "http://192.168.40.97:8000/inventory?style_name=";
+            public string default_style { get; set; } = "纯色/通纯棉圆领短T/黑/XL";
+        }
+
+        public static string ConfigPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
 
         public static AppConfig Load()
         {
             try
             {
-                if (File.Exists(ConfigPath))
+                if (!File.Exists(ConfigPath))
                 {
-                    var json = File.ReadAllText(ConfigPath);
-                    var cfg = JsonSerializer.Deserialize<AppConfig>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    return cfg ?? new AppConfig();
+                    var def = new AppConfig();
+                    File.WriteAllText(ConfigPath, JsonSerializer.Serialize(def, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+                    return def;
                 }
+                var raw = File.ReadAllText(ConfigPath);
+                return JsonSerializer.Deserialize<AppConfig>(raw) ?? new AppConfig();
             }
-            catch { }
-            var def = new AppConfig();
-            Save(def);
-            return def;
+            catch
+            {
+                return new AppConfig();
+            }
         }
-        public static void Save(AppConfig cfg)
+
+        public void Save()
         {
-            var json = JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(ConfigPath, json);
+            File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
         }
     }
 
     public static class ApiHelper
     {
-        public static async System.Threading.Tasks.Task<string> QueryAsync(AppConfig cfg, string text)
+        public static async Task<string> QueryAsync(AppConfig cfg, string text)
         {
             try
             {
-                using var http = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromSeconds(cfg.timeout_seconds) };
-                var method = (cfg.method ?? "POST").ToUpperInvariant();
-                System.Net.Http.HttpRequestMessage req;
-                if (method == "GET")
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(3, cfg.timeout_seconds)) };
+                using var req = new HttpRequestMessage(
+                    string.Equals(cfg.method, "GET", StringComparison.OrdinalIgnoreCase) ? HttpMethod.Get : HttpMethod.Post,
+                    cfg.api_url);
+
+                foreach (var kv in cfg.headers)
                 {
-                    req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"{cfg.api_url}?{cfg.json_key}={System.Uri.EscapeDataString(text)}");
+                    // "Content-Type" 对于 GET/POST 内容由下方设置；这里只加到请求头
+                    if (!string.Equals(kv.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                        req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                }
+
+                if (req.Method == HttpMethod.Get)
+                {
+                    var url = cfg.api_url.Contains("?") ? cfg.api_url + "&" : cfg.api_url + "?";
+                    url += Uri.EscapeDataString(cfg.json_key) + "=" + Uri.EscapeDataString(text ?? "");
+                    req.RequestUri = new Uri(url);
                 }
                 else
                 {
-                    var json = System.Text.Json.JsonSerializer.Serialize(new System.Collections.Generic.Dictionary<string,string> { { cfg.json_key, text } });
-                    req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, cfg.api_url);
-                    req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                    var payload = JsonSerializer.Serialize(new Dictionary<string, string> { [cfg.json_key] = text ?? "" });
+                    req.Content = new StringContent(payload, Encoding.UTF8, "application/json");
                 }
+
                 var resp = await http.SendAsync(req);
+                resp.EnsureSuccessStatusCode();
                 var raw = await resp.Content.ReadAsStringAsync();
+
+                // 若返回 JSON 有 msg 字段，优先取它
                 try
                 {
-                    var doc = System.Text.Json.JsonDocument.Parse(raw);
+                    var doc = JsonDocument.Parse(raw);
                     if (doc.RootElement.TryGetProperty("msg", out var msgEl))
                         return msgEl.ToString();
                     return raw;
                 }
                 catch { return raw; }
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 return $"请求失败：{ex.Message}";
             }
