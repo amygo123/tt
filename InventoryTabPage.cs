@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Drawing;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
@@ -11,23 +10,20 @@ using System.Windows.Forms;
 namespace StyleWatcherWin
 {
     /// <summary>
-    /// 库存页：调用 GET {cfg.inventory.url_base}{style}
-    /// 左侧：清洗后的原始文本；右侧：结构化表格（品名/颜色/尺码/仓库/可用/现有）
+    /// 库存页（仅表格）：调用 GET {cfg.inventory.url_base}{style} ，右侧展示结构化数据
     /// </summary>
     public class InventoryTabPage : TabPage
     {
         private readonly TextBox _txtQuery = new TextBox();
         private readonly Button _btnRefresh = new Button();
-        private readonly RichTextBox _rawBox = new RichTextBox();
         private readonly DataGridView _grid = new DataGridView();
-
         private readonly AppConfig _cfg;
 
         public InventoryTabPage(AppConfig cfg)
         {
             _cfg = cfg;
             Text = "库存";
-            BackColor = Color.White;
+            BackColor = System.Drawing.Color.White;
 
             BuildUI();
             _txtQuery.Text = cfg.inventory?.default_style ?? "";
@@ -37,38 +33,32 @@ namespace StyleWatcherWin
         private void BuildUI()
         {
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(12) };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             Controls.Add(root);
 
-            var bar = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(0), Margin = new Padding(0) };
-            var lbl = new Label { Text = "款式路径：", AutoSize = true, Margin = new Padding(0, 8, 6, 0) };
-            _txtQuery.Width = 420;
+            var bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Padding = new Padding(0) };
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            var lbl = new Label { Text = "款式路径：", AutoSize = true, Padding = new Padding(0, 10, 6, 0) };
+            _txtQuery.Dock = DockStyle.Fill;
             _btnRefresh.Text = "刷新";
-            _btnRefresh.Width = 72;
+            _btnRefresh.AutoSize = true; _btnRefresh.AutoSizeMode = AutoSizeMode.GrowAndShrink; _btnRefresh.Padding = new Padding(10, 4, 10, 4);
             _btnRefresh.Click += async (s, e) => await RefreshAsync();
-            bar.Controls.Add(lbl);
-            bar.Controls.Add(_txtQuery);
-            bar.Controls.Add(_btnRefresh);
+            bar.Controls.Add(lbl, 0, 0);
+            bar.Controls.Add(_txtQuery, 1, 0);
+            bar.Controls.Add(_btnRefresh, 2, 0);
             root.Controls.Add(bar, 0, 0);
 
-            var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 520 };
-            root.Controls.Add(split, 0, 1);
-
-            // 左：清洗后原文
-            _rawBox.ReadOnly = true;
-            _rawBox.Dock = DockStyle.Fill;
-            _rawBox.Font = new Font("Consolas", 10);
-            split.Panel1.Controls.Add(_rawBox);
-
-            // 右：结构化表格
+            // 仅表格
             _grid.Dock = DockStyle.Fill;
             _grid.ReadOnly = true;
             _grid.AllowUserToAddRows = false;
             _grid.AllowUserToDeleteRows = false;
             _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells;
             _grid.DataSource = new List<Row>();
-            split.Panel2.Controls.Add(_grid);
+            root.Controls.Add(_grid, 0, 1);
         }
 
         private async Task RefreshAsync()
@@ -94,24 +84,18 @@ namespace StyleWatcherWin
                 resp.EnsureSuccessStatusCode();
                 var raw = await resp.Content.ReadAsStringAsync();
 
-                // 清洗文本
+                // 解析并绑定
                 var lines = CleanLines(raw).ToList();
-                _rawBox.Text = string.Join(Environment.NewLine, lines);
-
-                // 结构化
                 var rows = ParseRows(lines);
                 _grid.DataSource = rows;
             }
             catch (Exception ex)
             {
-                _rawBox.Text = $"请求失败：{ex.Message}";
+                MessageBox.Show($"请求失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 _grid.DataSource = new List<Row>();
             }
         }
 
-        /// <summary>
-        /// 兼容 JSON 数组 / 纯文本，做初步清洗：去空行、去重、统一中文逗号、兼容半角空格、排序
-        /// </summary>
         private static IEnumerable<string> CleanLines(string raw)
         {
             var items = new List<string>();
@@ -139,9 +123,6 @@ namespace StyleWatcherWin
                 .OrderBy(s => s);
         }
 
-        /// <summary>
-        /// 解析“品名，颜色，尺码，仓库，可用，现有”，并容错
-        /// </summary>
         private static List<Row> ParseRows(IEnumerable<string> lines)
         {
             var result = new List<Row>();
