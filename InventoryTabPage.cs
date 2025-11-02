@@ -14,18 +14,12 @@ using OxyPlot.WindowsForms;
 
 namespace StyleWatcherWin
 {
-    /// <summary>
-    /// 库存页：动态“汇总 + 分仓”子Tab；每个子Tab含 KPI / 热力图 / 条形图 + 表格
-    /// 对外暴露：ShowWarehouse(name)、GetSummary()、SummaryUpdated 事件
-    /// </summary>
     public class InventoryTabPage : TabPage
     {
         private readonly AppConfig _cfg;
         private readonly TabControl _tabs = new TabControl();
 
-        // 最近一次汇总快照（概览页读取）
         private Aggregations.InventorySnapshot? _snapshot;
-
         public event Action? SummaryUpdated;
 
         public InventoryTabPage(AppConfig cfg)
@@ -33,15 +27,9 @@ namespace StyleWatcherWin
             _cfg = cfg;
             Text = "库存";
             BackColor = Color.White;
-
-            BuildUI();
-            _ = RefreshAsync();
-        }
-
-        private void BuildUI()
-        {
             _tabs.Dock = DockStyle.Fill;
             Controls.Add(_tabs);
+            _ = RefreshAsync();
         }
 
         public Aggregations.InventorySnapshot? GetSummary() => _snapshot;
@@ -49,13 +37,7 @@ namespace StyleWatcherWin
         public void ShowWarehouse(string name)
         {
             foreach (TabPage p in _tabs.TabPages)
-            {
-                if (string.Equals(p.Text, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    _tabs.SelectedTab = p;
-                    return;
-                }
-            }
+                if (string.Equals(p.Text, name, StringComparison.OrdinalIgnoreCase)) { _tabs.SelectedTab = p; return; }
         }
 
         private async Task RefreshAsync()
@@ -71,21 +53,18 @@ namespace StyleWatcherWin
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(3, _cfg.timeout_seconds)) };
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
                 foreach (var kv in _cfg.headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-
                 var resp = await http.SendAsync(req);
                 resp.EnsureSuccessStatusCode();
                 var raw = await resp.Content.ReadAsStringAsync();
 
-                var rows = ParseRows(CleanLines(raw));
+                var rows = ParseRows(CleanLines(raw)).ToList();
 
-                // 生成快照，通知外部
                 _snapshot = Aggregations.BuildSnapshot(rows.Select(r => new Aggregations.InventoryRow
                 {
                     品名 = r.品名, 颜色 = r.颜色, 尺码 = r.尺码, 仓库 = r.仓库, 可用 = r.可用, 现有 = r.现有
                 }));
                 SummaryUpdated?.Invoke();
 
-                // 构建动态子 Tab
                 BuildDynamicTabs(rows);
             }
             catch (Exception ex)
@@ -180,7 +159,7 @@ namespace StyleWatcherWin
 
         private PlotView BuildHeatmap(List<Row> data)
         {
-            // 用 RectangleBarSeries 实现类别热力图（X=颜色, Y=尺码）
+            // 类别热力图：X=颜色，Y=尺码
             var colors = data.Select(x => x.颜色 ?? "").Distinct().OrderBy(x => x).ToList();
             var sizes = data.Select(x => x.尺码 ?? "").Distinct().OrderBy(x => x).ToList();
             var dict = data.GroupBy(x => (x.颜色 ?? "", x.尺码 ?? ""))
@@ -199,13 +178,11 @@ namespace StyleWatcherWin
                 {
                     var key = (colors[xi], sizes[yi]);
                     dict.TryGetValue(key, out var v);
+                    var c = Aggregations.ColorScale(v, vmax);
                     var item = new RectangleBarItem(xi - 0.5, yi - 0.5, xi + 0.5, yi + 0.5)
                     {
-                        Color = OxyColor.FromArgb(Aggregations.ColorScale(v, vmax).A,
-                                                  Aggregations.ColorScale(v, vmax).R,
-                                                  Aggregations.ColorScale(v, vmax).G,
-                                                  Aggregations.ColorScale(v, vmax).B),
-                        Value = v
+                        // Older OxyPlot doesn't have Value property on RectangleBarItem; color only
+                        Color = OxyColor.FromArgb(c.A, c.R, c.G, c.B)
                     };
                     series.Items.Add(item);
                 }
