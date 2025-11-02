@@ -1,34 +1,26 @@
-<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
-
-    <!-- 发布策略：单文件 + 自包含 + 修剪 -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <TrimMode>partial</TrimMode>
-    <InvariantGlobalization>true</InvariantGlobalization>
-
-    <!-- 若你想固定 exe 名称，请取消下一行注释 -->
-    <!-- <AssemblyName>StyleWatcher</AssemblyName> -->
-
-    <!-- 应用图标（托盘也复用同一枚） -->
-    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Let CI pass publish flags; keep project clean -->
+    <AssemblyName>StyleWatcherWin</AssemblyName>
+    <RootNamespace>StyleWatcherWin</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 图表 -->
-    <PackageReference Include="OxyPlot.WindowsForms" Version="2.2.0" />
-    <!-- 导出 Excel -->
-    <PackageReference Include="ClosedXML" Version="0.103.0" />
+    <!-- Pin ClosedXML to avoid NU1603 resolution warning -->
+    <PackageReference Include="ClosedXML" Version="0.104.0" />
+    <!-- OxyPlot.WindowsForms pulls OxyPlot.Core; pin to a stable 2.x line -->
+    <PackageReference Include="OxyPlot.WindowsForms" Version="2.1.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Resources\app.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
+    <!-- Ensure appsettings.json goes next to the exe for runtime editing -->
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>
