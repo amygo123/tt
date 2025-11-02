@@ -41,9 +41,9 @@ namespace StyleWatcherWin
         private readonly TabControl _tabs = new TabControl();
 
         // 概览页
-        private PlotView _plot7d;
-        private PlotView _plotSizeTop;
-        private PlotView _plotColorTop;
+        private PlotView _plot7d = new PlotView();
+        private PlotView _plotSizeTop = new PlotView();
+        private PlotView _plotColorTop = new PlotView();
 
         // 明细页
         private DataGridView _grid = new DataGridView();
@@ -206,7 +206,7 @@ namespace StyleWatcherWin
         }
 
         /// <summary>兼容另一种签名：SetLoading(bool busy, string message = null)</summary>
-        public void SetLoading(bool busy, string message = null)
+        public void SetLoading(bool busy, string? message = null)
         {
             _lblTitle.Text = message ?? (busy ? "加载中…" : "");
             _lblSummary.Text = "";

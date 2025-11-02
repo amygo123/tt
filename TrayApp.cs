@@ -65,7 +65,7 @@ namespace StyleWatcherWin
         readonly AppConfig _cfg;
 
         // Single window & throttling
-        ResultForm _window;
+        ResultForm ?_window;
         readonly SemaphoreSlim _queryLock = new SemaphoreSlim(1, 1);
         DateTime _lastHotkeyAt = DateTime.MinValue;
 
@@ -107,8 +107,8 @@ namespace StyleWatcherWin
             var itemQuery = new ToolStripMenuItem("手动输入查询", null, (s, e) =>
             {
                 EnsureWindow();
-                _window.FocusInput();
-                _window.ShowNoActivateAtCursor();
+                _window!.FocusInput();
+                _window!.ShowNoActivateAtCursor();
             });
             var itemConfig = new ToolStripMenuItem("打开配置文件", null, (s, e) =>
             {
@@ -186,7 +186,7 @@ namespace StyleWatcherWin
         }
 
         // 选区（Win32）+ 剪贴板兜底
-        private string TryGetSelectedTextUsingWin32()
+        private string? TryGetSelectedTextUsingWin32()
         {
             try
             {
@@ -228,7 +228,7 @@ namespace StyleWatcherWin
 
         private async Task<string> GetSelectionByClipboardRoundTripAsync()
         {
-            IDataObject backup = null;
+            IDataObject? backup = null;
             try { backup = Clipboard.GetDataObject(); } catch { }
 
             SendKeys.SendWait("^c");
