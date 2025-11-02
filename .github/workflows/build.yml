@@ -1,0 +1,47 @@
+name: Build (WinForms .NET)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          8.0.x
+
+    - name: Enable NuGet cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.nuget/packages
+          ~/.local/share/NuGet/Cache
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Restore
+      run: dotnet restore
+
+    - name: Build (Release)
+      run: dotnet build -c Release --no-restore
+
+    - name: Publish (Self-contained win-x64)
+      run: dotnet publish SIT/StyleWatcherWin.csproj -c Release -r win-x64 -o out/win-x64
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: StyleWatcher-win-x64
+        path: out/win-x64/**
+        if-no-files-found: error
