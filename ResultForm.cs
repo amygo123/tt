@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -11,6 +12,7 @@ using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
+using OxyPlot.Legends; // for Legend
 
 namespace StyleWatcherWin
 {
@@ -232,8 +234,12 @@ namespace StyleWatcherWin
 
         private void SetKpiValue(Panel p,string value)
         {
-            var val = p.Controls.OfType<TableLayoutPanel>().First().Controls.OfType<Label>().LastOrDefault();
-            if(val!=null) val.Text=value ?? "—";
+            var table = p.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
+            if (table != null)
+            {
+                var val = table.Controls.OfType<Label>().LastOrDefault();
+                if(val!=null) val.Text=value ?? "—";
+            }
         }
 
         // —— 和 TrayApp.cs 对齐的接口 —— //
@@ -322,8 +328,9 @@ namespace StyleWatcherWin
             // 1) 趋势（补零，按日）
             var series = Aggregations.BuildDateSeries(cleaned, _trendWindow);
             var modelTrend = new PlotModel { Title = $"近{_trendWindow}日销量趋势", PlotMargins = new OxyThickness(50,10,10,40) };
-            modelTrend.IsLegendVisible = true;
-            modelTrend.LegendPosition = LegendPosition.TopRight;
+            // Legend（兼容不同 OxyPlot 版本）
+            var legend = new Legend { Position = LegendPosition.TopRight };
+            modelTrend.Legends.Add(legend);
 
             var xAxis = new DateTimeAxis{ Position=AxisPosition.Bottom, StringFormat="MM-dd", IntervalType=DateTimeIntervalType.Days, MajorStep=1, MinorStep=1, IntervalLength=60, IsZoomEnabled=false, IsPanEnabled=false, MajorGridlineStyle=LineStyle.Solid };
             var yAxis = new LinearAxis{ Position=AxisPosition.Left, MinimumPadding=0, AbsoluteMinimum=0, MajorGridlineStyle=LineStyle.Solid };
