@@ -385,7 +385,7 @@ namespace StyleWatcherWin
         private void RenderWarehousePiePlaceholder()
         {
             var model = new PlotModel { Title = "分仓库存占比" };
-            var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6 };
+            var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6, InsideLabelFormat = "{1:0}%" };
             pie.Slices.Add(new PieSlice("无数据", 1));
             model.Series.Add(pie);
             _plotWarehouse.Model = model;
@@ -424,12 +424,11 @@ namespace StyleWatcherWin
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
 
-            // 默认显示 MA7（不依赖 _cfg.ui）
+            // 默认显示 MA7
             var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
             var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
             for(int i=0;i<series.Count;i++) maSeries.Points.Add(new DataPoint(DateTimeAxis.ToDouble(series[i].day), ma[i]));
             modelTrend.Series.Add(maSeries);
-
             _plotTrend.Model = modelTrend;
 
             // TopN/全量

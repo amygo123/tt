@@ -16,6 +16,7 @@ namespace StyleWatcherWin
 {
     /// <summary>
     /// A2：库存页 —— 自包含的数据模型与聚合，不依赖 Aggregations.*（避免全局耦合）
+    /// 增强：子Tab内各自的搜索框；热力图颜色更易分辨；饼图显示百分比、合并小项。
     /// </summary>
     public class InventoryTabPage : TabPage
     {
@@ -248,61 +249,111 @@ namespace StyleWatcherWin
             _subTabs.TabPages.Clear();
 
             var first = new TabPage("汇总") { BackColor = Color.White };
-            first.Controls.Add(BuildWarehousePanel(snap));
+            first.Controls.Add(BuildWarehousePanel(snap, showWarehouseColumn:true));
             _subTabs.TabPages.Add(first);
 
             foreach (var wh in snap.WarehousesSorted())
             {
                 var sub = new TabPage(wh) { BackColor = Color.White };
-                var subSnap = snap.Filter(r => r.Warehouse == wh);
-                sub.Controls.Add(BuildWarehousePanel(subSnap));
+                var baseSnap = snap.Filter(r => r.Warehouse == wh);
+                sub.Controls.Add(BuildWarehousePanel(baseSnap, showWarehouseColumn:false));
                 _subTabs.TabPages.Add(sub);
             }
 
             _subTabs.ResumeLayout();
         }
 
-        private Control BuildWarehousePanel(InvSnapshot snap)
+        private Control BuildWarehousePanel(InvSnapshot baseSnap, bool showWarehouseColumn)
         {
-            var p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(6) };
-            p.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
-            p.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
-            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            // 三行：工具条(含子搜索+合计) + 上排两图 + 下排明细与一图
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(6) };
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+
+            // —— 子工具条 —— //
+            var qBox = new TextBox { PlaceholderText = "筛选本仓（颜色/尺码）", Width = 260 };
+            var lblA = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 9, FontStyle.Bold), Margin = new Padding(10,6,0,0) };
+            var lblH = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 9, FontStyle.Bold), Margin = new Padding(10,6,0,0) };
+            var tools = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+            tools.Controls.Add(qBox); tools.Controls.Add(lblA); tools.Controls.Add(lblH);
+            root.Controls.Add(tools, 0, 0);
+
+            // —— 上下两排网格 —— //
+            var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            root.Controls.Add(top, 0, 1);
+            root.Controls.Add(bottom, 0, 2);
 
             var pvHeat = new PlotView { Dock = DockStyle.Fill };
             var pvColor = new PlotView { Dock = DockStyle.Fill };
-            var pvSize = new PlotView { Dock = DockStyle.Fill };
+            var pvSize  = new PlotView { Dock = DockStyle.Fill };
             var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, RowHeadersVisible = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells };
 
-            RenderHeatmap(snap, pvHeat, "颜色×尺码（仓）");
-            RenderBarsByColor(snap, pvColor, "颜色可用（降序）");
-            RenderBarsBySize (snap, pvSize,  "尺码可用（降序）");
+            top.Controls.Add(pvHeat, 0, 0);
+            top.Controls.Add(pvColor, 1, 0);
+            bottom.Controls.Add(pvSize, 0, 0);
+            bottom.Controls.Add(grid, 1, 0);
 
-            // 明细：按 仓库/品名/颜色/尺码 顺序展示
-            grid.DataSource = snap.Rows
-                .OrderBy(r => r.Warehouse).ThenBy(r => r.Name).ThenBy(r => r.Color).ThenBy(r => r.Size)
-                .Select(r => new { 仓库 = r.Warehouse, 品名 = r.Name, 颜色 = r.Color, 尺码 = r.Size, 可用 = r.Available, 现有 = r.OnHand })
-                .ToList();
+            // —— 局部渲染器 —— //
+            void RenderLocal(InvSnapshot snap)
+            {
+                lblA.Text = $"可用合计：{snap.TotalAvailable}";
+                lblH.Text = $"现有合计：{snap.TotalOnHand}";
+                RenderHeatmap(snap, pvHeat, "颜色×尺码（仓）");
+                RenderBarsByColor(snap, pvColor, "颜色可用（降序）");
+                RenderBarsBySize (snap, pvSize,  "尺码可用（降序）");
 
-            p.Controls.Add(pvHeat, 0, 0);
-            p.Controls.Add(pvColor,1, 0);
-            p.Controls.Add(pvSize, 0, 1);
-            p.Controls.Add(grid,   1, 1);
+                var query = snap.Rows
+                    .OrderBy(r => r.Name).ThenBy(r => r.Color).ThenBy(r => r.Size);
 
-            return p;
+                if (showWarehouseColumn)
+                {
+                    grid.DataSource = query
+                        .Select(r => new { 仓库 = r.Warehouse, 品名 = r.Name, 颜色 = r.Color, 尺码 = r.Size, 可用 = r.Available, 现有 = r.OnHand })
+                        .ToList();
+                }
+                else
+                {
+                    grid.DataSource = query
+                        .Select(r => new { 品名 = r.Name, 颜色 = r.Color, 尺码 = r.Size, 可用 = r.Available, 现有 = r.OnHand })
+                        .ToList();
+                }
+            }
+
+            // 初次渲染
+            RenderLocal(baseSnap);
+
+            // 子搜索：仅对本面板生效
+            var debounce = new System.Windows.Forms.Timer { Interval = 220 };
+            debounce.Tick += (s,e)=> { debounce.Stop();
+                var text = (qBox.Text ?? "").Trim();
+                if (string.IsNullOrEmpty(text)) { RenderLocal(baseSnap); return; }
+                var filtered = baseSnap.Filter(r =>
+                    (r.Color?.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                    (r.Size ?.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0));
+                RenderLocal(filtered);
+            };
+            qBox.TextChanged += (s,e)=> { debounce.Stop(); debounce.Start(); };
+
+            return root;
         }
 
         // —— 可视化 —— //
 
         private static OxyColor HeatColor(double v, double vmin, double vmax)
         {
-            // 简洁的白→绿渐变；v<=0 近白
+            // 更易分辨：浅黄 → 橙 → 红
             if (vmax <= vmin) return OxyColors.LightGray;
             var t = Math.Max(0, Math.Min(1, (v - vmin) / (vmax - vmin)));
-            byte r = (byte)(255 * (1 - t));
-            byte g = (byte)(255 * (1 - 0.37 * t)); // 255→160
-            byte b = (byte)(255 * (1 - t));
+            // 线性插值：LightYellow(255,255,224) -> Red(255,0,0)
+            byte r = 255;
+            byte g = (byte)(255 * (1 - t));
+            byte b = (byte)(224 * (1 - t));
             return OxyColor.FromRgb(r, g, b);
         }
 
@@ -408,7 +459,7 @@ namespace StyleWatcherWin
 
             var total = agg.Sum(x => x.Qty);
             var model = new PlotModel { Title = title };
-            var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6 };
+            var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6, InsideLabelFormat = "{1:0}%" };
 
             if (total <= 0)
             {
@@ -416,18 +467,24 @@ namespace StyleWatcherWin
             }
             else
             {
-                // 小于 5% 合并为“其他”
+                // 小于 5% 合并为“其他”，并对标签名称做适度裁剪
                 double other = 0;
                 foreach (var a in agg)
                 {
                     var ratio = (double)a.Qty / total;
                     if (ratio < 0.05) other += a.Qty;
-                    else pie.Slices.Add(new PieSlice(a.Key, a.Qty));
+                    else pie.Slices.Add(new PieSlice(Short(a.Key, 10), a.Qty));
                 }
                 if (other > 0) pie.Slices.Add(new PieSlice("其他", other));
             }
             model.Series.Add(pie);
             pv.Model = model;
+
+            static string Short(string s, int max)
+            {
+                if (string.IsNullOrEmpty(s)) return s ?? "";
+                return s.Length <= max ? s : (s.Substring(0, max) + "…");
+            }
         }
     }
 }
