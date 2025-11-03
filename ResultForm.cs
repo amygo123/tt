@@ -54,8 +54,8 @@ namespace StyleWatcherWin
         private readonly BindingSource _binding = new();
         private readonly TextBox _boxSearch = new();
 
-        // Inventory page
-        private InventoryTabPage _invPage;
+        // Inventory page (nullable until BuildTabs assigns)
+        private InventoryTabPage? _invPage;
 
         // Caches
         private string _lastDisplayText = string.Empty;
@@ -195,7 +195,7 @@ namespace StyleWatcherWin
 
         private void OnInventorySummaryUpdated()
         {
-            var snap=_invPage.GetSummary();
+            var snap=_invPage?.GetSummary();
             if(snap==null) return;
 
             // 可用总库存
@@ -218,7 +218,7 @@ namespace StyleWatcherWin
         private void SetKpiValue(Panel p,string value)
         {
             var val = p.Controls.OfType<Label>().FirstOrDefault(l=>l.Dock==DockStyle.Fill);
-            if(val!=null) val.Text=value;
+            if(val!=null) val.Text=value ?? "—";
         }
 
         // ====== Public methods used by TrayApp ======
@@ -247,20 +247,29 @@ namespace StyleWatcherWin
             var newGrid = parsed.Records.Select(r => (object)new { 日期=r.Date.ToString("yyyy-MM-dd"), 款式=r.Name, 尺码=r.Size, 颜色=r.Color, 数量=r.Qty }).ToList();
 
             // 成功后替换缓存
-            _lastDisplayText = displayText;
+            _lastDisplayText = displayText ?? string.Empty;
             _sales = newSales;
             _gridMaster = newGrid;
 
             // KPI
             var sales7 = _sales.Where(x=>x.Date>=DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
             SetKpiValue(_kpiSales7, sales7.ToString());
-            SetKpiValue(_kpiMissing, Aggregations.MissingSizes(_sales.Select(s=>s.Size)).ToString());
+            // 缺尺码（本地实现，避免对 Aggregations.MissingSizes 的依赖）
+            SetKpiValue(_kpiMissing, CountMissingSizes(_sales.Select(s=>s.Size)).ToString());
 
             // 渲染
             RenderCharts(_sales);
 
             _binding.DataSource = new BindingList<object>(_gridMaster);
             _grid.ClearSelection();
+        }
+
+        // 计算“缺尺码数”（以常见尺码清单为基准）
+        private static int CountMissingSizes(IEnumerable<string> sizes)
+        {
+            var set = new HashSet<string>(sizes.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+            var baseline = new []{"XS","S","M","L","XL","2XL","3XL","4XL","5XL","6XL","KXL","K2XL","K3XL","K4XL"};
+            return baseline.Count(s => !set.Contains(s));
         }
 
         private void RenderCharts(List<Aggregations.SalesItem> salesItems)
