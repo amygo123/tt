@@ -58,7 +58,7 @@ namespace StyleWatcherWin
         private InventoryTabPage? _invPage;
 
         // Caches
-        private string _lastDisplayText = string.Empty;
+        private string _lastDisplayText = string.Empty; // 上一次解析的原文
         private List<Aggregations.SalesItem> _sales = new();
         private List<object> _gridMaster = new();
 
@@ -113,9 +113,11 @@ namespace StyleWatcherWin
             head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             _input.MinimumSize = new Size(360,30);
+
             _btnQuery.Text="重新查询";
             _btnQuery.AutoSize=true; _btnQuery.Padding=new Padding(10,6,10,6);
-            _btnQuery.Click += async (s,e)=>{ _btnQuery.Enabled=false; try{ await ReloadAsync(); } finally{ _btnQuery.Enabled=true; } };
+            // 关键修复：点击时使用“上一次原文”重载渲染，避免误把输入框的款式名称当原文解析导致概览消失
+            _btnQuery.Click += async (s,e)=>{ _btnQuery.Enabled=false; try{ await ReloadAsync(""); } finally{ _btnQuery.Enabled=true; } };
 
             _btnExport.Text="导出Excel";
             _btnExport.AutoSize=true; _btnExport.Padding=new Padding(10,6,10,6);
@@ -228,7 +230,7 @@ namespace StyleWatcherWin
         public void ShowAndFocusCentered(bool alwaysOnTop){ TopMost=alwaysOnTop; StartPosition=FormStartPosition.CenterScreen; Show(); Activate(); FocusInput(); }
         public void SetLoading(string message){ SetKpiValue(_kpiSales7,"—"); SetKpiValue(_kpiInv,"—"); SetKpiValue(_kpiDoc,"—"); SetKpiValue(_kpiMissing,"—"); }
 
-        public async void ApplyRawText(string selection, string parsed){ _input.Text=selection??string.Empty; await LoadTextAsync(parsed??string.Empty); }
+        public async void ApplyRawText(string selection, string parsed){ _input.Text=selection??string.Empty; _lastDisplayText = parsed ?? string.Empty; await LoadTextAsync(parsed??string.Empty); }
         public void ApplyRawText(string text){ _input.Text=text??string.Empty; }
 
         // ====== Load / Render ======
@@ -238,13 +240,17 @@ namespace StyleWatcherWin
         private async System.Threading.Tasks.Task ReloadAsync(string displayText)
         {
             await System.Threading.Tasks.Task.Yield();
+
+            // 如果传入为空，强制使用缓存原文（避免误把款式名当作原文解析）
             if (string.IsNullOrWhiteSpace(displayText))
                 displayText = _lastDisplayText;
 
             // 解析
             var parsed = Parser.Parse(displayText ?? string.Empty); // 兼容层包装到 PayloadParser
             var newSales = parsed.Records.Select(r=> new Aggregations.SalesItem{ Date=r.Date, Size=r.Size??"", Color=r.Color??"", Qty=r.Qty }).ToList();
-            var newGrid = parsed.Records.Select(r => (object)new { 日期=r.Date.ToString("yyyy-MM-dd"), 款式=r.Name, 尺码=r.Size, 颜色=r.Color, 数量=r.Qty }).ToList();
+            var newGrid = parsed.Records
+                .OrderBy(r=>r.Name).ThenBy(r=>r.Color).ThenBy(r=>r.Size).ThenByDescending(r=>r.Date)  // 销售明细排序：款式->颜色->尺码->日期
+                .Select(r => (object)new { 日期=r.Date.ToString("yyyy-MM-dd"), 款式=r.Name, 颜色=r.Color, 尺码=r.Size, 数量=r.Qty }).ToList();
 
             // 成功后替换缓存
             _lastDisplayText = displayText ?? string.Empty;
@@ -254,7 +260,6 @@ namespace StyleWatcherWin
             // KPI
             var sales7 = _sales.Where(x=>x.Date>=DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
             SetKpiValue(_kpiSales7, sales7.ToString());
-            // 缺尺码（本地实现，避免对 Aggregations.MissingSizes 的依赖）
             SetKpiValue(_kpiMissing, CountMissingSizes(_sales.Select(s=>s.Size)).ToString());
 
             // 渲染
@@ -262,6 +267,12 @@ namespace StyleWatcherWin
 
             _binding.DataSource = new BindingList<object>(_gridMaster);
             _grid.ClearSelection();
+            // 列顺序：款式/颜色/尺码/日期/数量
+            if (_grid.Columns.Contains("款式")) _grid.Columns["款式"].DisplayIndex = 0;
+            if (_grid.Columns.Contains("颜色")) _grid.Columns["颜色"].DisplayIndex = 1;
+            if (_grid.Columns.Contains("尺码")) _grid.Columns["尺码"].DisplayIndex = 2;
+            if (_grid.Columns.Contains("日期")) _grid.Columns["日期"].DisplayIndex = 3;
+            if (_grid.Columns.Contains("数量")) _grid.Columns["数量"].DisplayIndex = 4;
         }
 
         // 计算“缺尺码数”（以常见尺码清单为基准）
@@ -338,15 +349,15 @@ namespace StyleWatcherWin
 
             using var wb = new XLWorkbook();
             var ws1 = wb.AddWorksheet("销售明细");
-            ws1.Cell(1,1).Value="日期"; ws1.Cell(1,2).Value="款式"; ws1.Cell(1,3).Value="尺码"; ws1.Cell(1,4).Value="颜色"; ws1.Cell(1,5).Value="数量";
+            ws1.Cell(1,1).Value="日期"; ws1.Cell(1,2).Value="款式"; ws1.Cell(1,3).Value="颜色"; ws1.Cell(1,4).Value="尺码"; ws1.Cell(1,5).Value="数量";
             var list=_gridMaster;
             int r=2;
             foreach(var it in list){
                 var t=it.GetType();
                 ws1.Cell(r,1).Value=t.GetProperty("日期")?.GetValue(it)?.ToString();
                 ws1.Cell(r,2).Value=t.GetProperty("款式")?.GetValue(it)?.ToString();
-                ws1.Cell(r,3).Value=t.GetProperty("尺码")?.GetValue(it)?.ToString();
-                ws1.Cell(r,4).Value=t.GetProperty("颜色")?.GetValue(it)?.ToString();
+                ws1.Cell(r,3).Value=t.GetProperty("颜色")?.GetValue(it)?.ToString();
+                ws1.Cell(r,4).Value=t.GetProperty("尺码")?.GetValue(it)?.ToString();
                 ws1.Cell(r,5).Value=t.GetProperty("数量")?.GetValue(it)?.ToString();
                 r++;
             }
