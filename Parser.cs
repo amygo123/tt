@@ -113,4 +113,9 @@ namespace StyleWatcherWin
             return result;
         }
     }
+    // Backward-compat wrapper for legacy references: StyleWatcherWin.Parser.Parse(...)
+    public static class Parser
+    {
+        public static ParsedPayload Parse(string text) => PayloadParser.Parse(text);
+    }
 }
