@@ -22,6 +22,8 @@ namespace StyleWatcherWin
         public static readonly Color HeaderBack = Color.FromArgb(245,247,250);
         public static readonly Color CardBack   = Color.FromArgb(250,250,250);
         public static readonly Color Text       = Color.FromArgb(47,47,47);
+        public static readonly Color ChipBack   = Color.FromArgb(235, 238, 244);
+        public static readonly Color ChipBorder = Color.FromArgb(210, 214, 222);
     }
 
     public class ResultForm : Form
@@ -39,6 +41,7 @@ namespace StyleWatcherWin
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
         private readonly Panel _kpiMissing = new();
+        private FlowLayoutPanel? _kpiMissingFlow; // 缺尺码专用流式布局
 
         // Tabs
         private readonly TabControl _tabs = new();
@@ -104,7 +107,7 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpi(_kpiSales7,"近7日销量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiInv,"可用库存总量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiDoc,"库存天数","—"));
-            _kpi.Controls.Add(MakeKpi(_kpiMissing,"缺失尺码","—"));
+            _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺失尺码")); // 换用可滚动小标签容器
             content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -155,6 +158,73 @@ namespace StyleWatcherWin
             host.Controls.Clear();
             host.Controls.Add(inner);
             return host;
+        }
+
+        // 缺尺码 KPI：顶部标题 + 中部滚动 chips（小字体，可换行）
+        private Control MakeKpiMissing(Panel host, string title)
+        {
+            host.Width=260; host.Height=110; host.Padding=new Padding(10);
+            host.BackColor=UI.CardBack; host.BorderStyle=BorderStyle.FixedSingle;
+            host.Margin = new Padding(8,4,8,4);
+
+            var inner = new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2};
+            inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=UI.Text,Font=UI.Body,TextAlign=ContentAlignment.MiddleLeft};
+
+            var flow = new FlowLayoutPanel{
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                AutoScroll = true,
+                Padding = new Padding(0),
+                Margin = new Padding(0)
+            };
+            _kpiMissingFlow = flow;
+
+            inner.Controls.Add(t,0,0);
+            inner.Controls.Add(flow,0,1);
+            host.Controls.Clear();
+            host.Controls.Add(inner);
+            return host;
+        }
+
+        private void SetMissingSizes(IEnumerable<string> sizes)
+        {
+            if (_kpiMissingFlow == null) return;
+            _kpiMissingFlow.SuspendLayout();
+            _kpiMissingFlow.Controls.Clear();
+
+            foreach (var s in sizes)
+            {
+                var chip = new Label
+                {
+                    AutoSize = true,
+                    Text = s,
+                    Font = new Font("Microsoft YaHei UI", 8.5f, FontStyle.Regular),
+                    BackColor = UI.ChipBack,
+                    ForeColor = UI.Text,
+                    Padding = new Padding(6, 2, 6, 2),
+                    Margin = new Padding(4, 2, 0, 2),
+                    BorderStyle = BorderStyle.FixedSingle
+                };
+                _kpiMissingFlow.Controls.Add(chip);
+            }
+
+            if (_kpiMissingFlow.Controls.Count == 0)
+            {
+                var none = new Label
+                {
+                    AutoSize = true,
+                    Text = "无",
+                    Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular),
+                    ForeColor = UI.Text
+                };
+                _kpiMissingFlow.Controls.Add(none);
+            }
+
+            _kpiMissingFlow.ResumeLayout();
         }
 
         private void BuildTabs()
@@ -236,7 +306,6 @@ namespace StyleWatcherWin
             var table = p.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
             if (table != null)
             {
-                // 最后一行是数值 Label；如果不存在不赋值，避免空引用
                 var labels = table.Controls.OfType<Label>().ToList();
                 if (labels.Count > 0)
                 {
@@ -281,8 +350,8 @@ namespace StyleWatcherWin
             var sales7 = _sales.Where(x=>x.Date>=DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
             SetKpiValue(_kpiSales7, sales7.ToString());
 
-            // 缺失尺码：展示具体列表
-            SetKpiValue(_kpiMissing, string.Join(" / ", MissingSizes(_sales.Select(s=>s.Size))));
+            // 缺失尺码：展示具体列表（chips，自动换行+小字体）
+            SetMissingSizes(MissingSizes(_sales.Select(s=>s.Size)));
 
             RenderCharts(_sales);
 
