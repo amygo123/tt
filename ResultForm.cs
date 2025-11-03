@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Linq;
@@ -60,6 +61,11 @@ namespace StyleWatcherWin
         // 库存页
         private InventoryTabPage _invPage;
 
+        // 缓存：避免 UI 置空
+        private string _lastDisplayText = string.Empty;
+        private List<Aggregations.SalesItem> _cachedSales = new List<Aggregations.SalesItem>();
+        private List<object> _gridDataMaster = new List<object>();
+
         public ResultForm(AppConfig cfg)
         {
             _cfg = cfg;
@@ -77,7 +83,7 @@ namespace StyleWatcherWin
             Height = _cfg.window.height;
 
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Color.White };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 68)); // 顶栏稍增高，避免重叠
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 68)); // 顶栏稍增高
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // 内容
             Controls.Add(root);
 
@@ -101,7 +107,7 @@ namespace StyleWatcherWin
 
             // 内容容器：KPI + Tabs
             var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 118)); // 再抬高，彻底避免文字裁剪
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 118)); // KPI 高一些
             content.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             root.Controls.Add(content, 0, 1);
 
@@ -171,10 +177,12 @@ namespace StyleWatcherWin
             {
                 var rb = new RadioButton { Text = $"{w} 日", AutoSize = true, Tag = w, Margin = new Padding(0, 6, 18, 0) };
                 if (w == _trendWindow) rb.Checked = true;
-                rb.CheckedChanged += async (s, e) =>
+                rb.CheckedChanged += (s, e) =>
                 {
                     var me = (RadioButton)s;
-                    if (me.Checked) { _trendWindow = (int)me.Tag; await ReloadAsync(); }
+                    if (!me.Checked) return;
+                    _trendWindow = (int)me.Tag;
+                    if (_cachedSales.Count > 0) RenderCharts(_cachedSales);
                 };
                 _trendSwitch.Controls.Add(rb);
             }
@@ -219,12 +227,12 @@ namespace StyleWatcherWin
 
         // ===== TrayApp 兼容方法 =====
         public void FocusInput(){ try{ if(WindowState==FormWindowState.Minimized) WindowState=FormWindowState.Normal; _input.Focus(); _input.SelectAll(); }catch{} }
-        public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.max(0,pt.X-Width/2),Math.max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
+        public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.Max(0,pt.X-Width/2),Math.Max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
         public void ShowAndFocusCentered(){ try{ StartPosition=FormStartPosition.CenterScreen; Show(); Activate(); FocusInput(); }catch{ Show(); } }
         public void ShowAndFocusCentered(bool alwaysOnTop){ TopMost=alwaysOnTop; ShowAndFocusCentered(); }
         public void SetLoading(string message){ /* 占位 */ }
         public void SetLoading(bool busy, string? message=null){ /* 占位 */ }
-        public async void ApplyRawText(string selection, string parsed){ _input.Text=selection??string.Empty; await LoadTextAsync(parsed??string.Empty); }
+        public async void ApplyRawText(string selection, string parsed){ _input.Text=selection??string.Empty; _lastDisplayText = parsed ?? string.Empty; await LoadTextAsync(parsed??string.Empty); }
         public void ApplyRawText(string text){ _input.Text=text??string.Empty; }
 
         // ===== 加载/绑定 =====
@@ -234,24 +242,16 @@ namespace StyleWatcherWin
         private async System.Threading.Tasks.Task ReloadAsync(string displayText)
         {
             await System.Threading.Tasks.Task.Yield();
-            var parsed = StyleWatcherWin.PayloadParser.Parse(displayText);
 
-            // KPI（销售侧）
-            var salesItems = parsed.Records.Select(r => new Aggregations.SalesItem
+            if (string.IsNullOrWhiteSpace(displayText))
+                displayText = _lastDisplayText;
+
+            var parsed = StyleWatcherWin.PayloadParser.Parse(displayText);
+            var newSales = parsed.Records.Select(r => new Aggregations.SalesItem
             {
                 Date = r.Date, Size = r.Size ?? "", Color = r.Color ?? "", Qty = r.Qty
             }).ToList();
-            var sales7 = salesItems.Where(x => x.Date >= DateTime.Today.AddDays(-6)).Sum(x => x.Qty);
-            MakeKpi(_kpiSales7, "近7日销量", sales7.ToString(), Aggregations.AlertLevel.Unknown);
-
-            // 库存 KPI 等待库存页触发 SummaryUpdated 来刷新
-            MakeKpi(_kpiInv, "可用库存(总)", "—", Aggregations.AlertLevel.Unknown);
-            MakeKpi(_kpiDoc, "库存天数(DoC)", "—", Aggregations.AlertLevel.Unknown);
-            MakeKpi(_kpiMissing, "缺尺码数", "—", Aggregations.AlertLevel.Unknown);
-
-            RenderCharts(salesItems);
-
-            _binding.DataSource = parsed.Records.Select(r => new
+            var newGrid = parsed.Records.Select(r => (object)new
             {
                 日期 = r.Date.ToString("yyyy-MM-dd"),
                 款式 = r.Name,
@@ -259,12 +259,26 @@ namespace StyleWatcherWin
                 颜色 = r.Color,
                 数量 = r.Qty
             }).ToList();
+
+            _lastDisplayText = displayText;
+            _cachedSales = newSales;
+            _gridDataMaster = newGrid;
+
+            var sales7 = _cachedSales.Where(x => x.Date >= DateTime.Today.AddDays(-6)).Sum(x => x.Qty);
+            MakeKpi(_kpiSales7, "近7日销量", sales7.ToString(), Aggregations.AlertLevel.Unknown);
+
+            MakeKpi(_kpiInv, "可用库存(总)", "—", Aggregations.AlertLevel.Unknown);
+            MakeKpi(_kpiDoc, "库存天数(DoC)", "—", Aggregations.AlertLevel.Unknown);
+            MakeKpi(_kpiMissing, "缺尺码数", "—", Aggregations.AlertLevel.Unknown);
+
+            RenderCharts(_cachedSales);
+
+            _binding.DataSource = new BindingList<object>(_gridDataMaster);
             _grid.ClearSelection();
         }
 
         private void RenderCharts(List<Aggregations.SalesItem> salesItems)
         {
-            // 趋势
             var series = Aggregations.BuildDateSeries(salesItems, _trendWindow);
             var modelTrend = new PlotModel { Title = $"近 {_trendWindow} 日总销量趋势", PlotMargins = new OxyThickness(50, 10, 10, 40) };
             var xAxis = new DateTimeAxis
@@ -272,15 +286,19 @@ namespace StyleWatcherWin
                 Position = AxisPosition.Bottom,
                 StringFormat = "MM-dd",
                 IntervalType = DateTimeIntervalType.Days,
-                MinorIntervalType = DateTimeIntervalType.Days,
+                MajorStep = 1, MinorStep = 1,
+                IntervalLength = 60,
+                IsPanEnabled = false, IsZoomEnabled = false,
                 MajorGridlineStyle = LineStyle.Solid,
-                MinorGridlineStyle = LineStyle.None,
-                Angle = 0
+                MinorGridlineStyle = LineStyle.None
             };
             var yAxis = new LinearAxis { Position = AxisPosition.Left, MinimumPadding = 0, AbsoluteMinimum = 0, MajorGridlineStyle = LineStyle.Solid };
+            modelTrend.Axes.Clear();
             modelTrend.Axes.Add(xAxis); modelTrend.Axes.Add(yAxis);
+
             var line = new LineSeries { MarkerType = MarkerType.Circle };
             foreach (var (day, qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
+            modelTrend.Series.Clear();
             modelTrend.Series.Add(line);
 
             if (_cfg.ui?.showMovingAverage ?? true)
@@ -293,7 +311,6 @@ namespace StyleWatcherWin
             }
             _plot7d.Model = modelTrend;
 
-            // 尺码（全量降序）
             var sizeAgg = Aggregations.BySize(salesItems);
             var modelSize = new PlotModel { Title = "各尺码销量（降序，全部）", PlotMargins = new OxyThickness(80, 6, 6, 6) };
             modelSize.Axes.Add(new CategoryAxis { Position = AxisPosition.Left, ItemsSource = sizeAgg, LabelField = "Key", GapWidth = 0.4 });
@@ -301,7 +318,6 @@ namespace StyleWatcherWin
             modelSize.Series.Add(new BarSeries { ItemsSource = sizeAgg.Select(x => new BarItem { Value = x.Qty }) });
             _plotSize.Model = modelSize;
 
-            // 颜色（全量降序）
             var colorAgg = Aggregations.ByColor(salesItems);
             var modelColor = new PlotModel { Title = "各颜色销量（降序，全部）", PlotMargins = new OxyThickness(80, 6, 6, 6) };
             modelColor.Axes.Add(new CategoryAxis { Position = AxisPosition.Left, ItemsSource = colorAgg, LabelField = "Key", GapWidth = 0.4 });
@@ -338,11 +354,16 @@ namespace StyleWatcherWin
         private void ApplyFilter(string q)
         {
             q = (q ?? "").Trim();
-            var current = _binding.DataSource as IEnumerable<object>;
-            if (current == null) return;
-            if (string.IsNullOrWhiteSpace(q)) { _binding.ResetBindings(false); return; }
+            if (_gridDataMaster == null) return;
 
-            var filtered = current.Where(x =>
+            if (string.IsNullOrWhiteSpace(q))
+            {
+                _binding.DataSource = new BindingList<object>(_gridDataMaster);
+                _grid.ClearSelection();
+                return;
+            }
+
+            var filtered = _gridDataMaster.Where(x =>
             {
                 var t = x.GetType();
                 string Get(string name) => t.GetProperty(name)?.GetValue(x)?.ToString() ?? "";
@@ -353,7 +374,7 @@ namespace StyleWatcherWin
                     || Get("数量").Contains(q, StringComparison.OrdinalIgnoreCase);
             }).ToList();
 
-            _binding.DataSource = filtered;
+            _binding.DataSource = new BindingList<object>(filtered);
             _grid.ClearSelection();
         }
 
@@ -371,7 +392,7 @@ namespace StyleWatcherWin
             ws1.Cell(1, 4).Value = "颜色";
             ws1.Cell(1, 5).Value = "数量";
 
-            var list = _binding.DataSource as IEnumerable<object>;
+            var list = _gridDataMaster;
             if (list != null)
             {
                 int r = 2;
@@ -388,38 +409,25 @@ namespace StyleWatcherWin
             }
             ws1.Columns().AdjustToContents();
 
-            var ws2 = wb.AddWorksheet("趋势7天");
+            var ws2 = wb.AddWorksheet("趋势");
             ws2.Cell(1, 1).Value = "日期";
             ws2.Cell(1, 2).Value = "数量";
 
-            var detail = _binding.DataSource as IEnumerable<object>;
-            if (detail != null)
+            if (_cachedSales != null && _cachedSales.Count > 0)
             {
-                var trend = detail
-                    .Select(x =>
-                    {
-                        var t = x.GetType();
-                        var d = DateTime.Parse(t.GetProperty("日期")?.GetValue(x)?.ToString() ?? DateTime.Now.ToString("yyyy-MM-dd"));
-                        var q = int.Parse(t.GetProperty("数量")?.GetValue(x)?.ToString() ?? "0");
-                        return new { 日期 = d.Date, 数量 = q };
-                    })
-                    .GroupBy(x => x.日期)
-                    .OrderBy(x => x.Key)
-                    .Select(x => new { Day = x.Key.ToString("yyyy-MM-dd"), Qty = x.Sum(y => y.数量) })
-                    .ToList();
-
+                var series = Aggregations.BuildDateSeries(_cachedSales, _trendWindow);
                 int r = 2;
-                foreach (var it in trend)
+                foreach (var it in series)
                 {
-                    ws2.Cell(r, 1).Value = it.Day;
-                    ws2.Cell(r, 2).Value = it.Qty;
+                    ws2.Cell(r, 1).Value = it.day.ToString("yyyy-MM-dd");
+                    ws2.Cell(r, 2).Value = it.qty;
                     r++;
                 }
             }
             ws2.Columns().AdjustToContents();
 
             wb.SaveAs(path);
-            try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); } catch { }
+            try { System.Diagnostics.Process.Start("explorer.exe", $"/select,"{path}""); } catch { }
         }
     }
 }
