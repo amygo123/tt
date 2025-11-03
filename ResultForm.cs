@@ -74,7 +74,6 @@ namespace StyleWatcherWin
         public ResultForm(AppConfig cfg)
         {
             _cfg = cfg;
-            _trendWindow = (_cfg.ui?.trendWindows?.FirstOrDefault() ?? 7);
 
             Text = "StyleWatcher";
             Font = new Font("Microsoft YaHei UI", _cfg.window.fontSize);
@@ -241,7 +240,9 @@ namespace StyleWatcherWin
             _trendSwitch.WrapContents=false;
             _trendSwitch.AutoSize=true;
             _trendSwitch.Padding=new Padding(0,0,12,0);
-            var wins=_cfg.ui?.trendWindows??new[]{7,14,30};
+
+            // 使用固定窗口（避免依赖 _cfg.ui）
+            var wins=new int[]{7,14,30};
             foreach(var w in wins.Distinct().OrderBy(x=>x)){
                 var rb=new RadioButton{Text=$"{w} 日",AutoSize=true,Tag=w,Margin=new Padding(0,2,18,0)};
                 if(w==_trendWindow) rb.Checked=true;
@@ -260,11 +261,6 @@ namespace StyleWatcherWin
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-
-            var _plotTrend = this._plotTrend;
-            var _plotWarehouse = this._plotWarehouse;
-            var _plotSize = this._plotSize;
-            var _plotColor = this._plotColor;
 
             _plotTrend.Dock=DockStyle.Fill;
             _plotWarehouse.Dock=DockStyle.Fill;
@@ -301,7 +297,7 @@ namespace StyleWatcherWin
             detail.Controls.Add(panel);
             _tabs.TabPages.Add(detail);
 
-            // A2：库存页接线
+            // 库存页接线（不依赖 _cfg.ui）
             _invPage = new InventoryTabPage(_cfg);
             _tabs.TabPages.Add(_invPage);
         }
@@ -322,7 +318,7 @@ namespace StyleWatcherWin
 
         // —— 和 TrayApp.cs 对齐的接口 —— //
         public void FocusInput(){ try{ if(WindowState==FormWindowState.Minimized) WindowState=FormWindowState.Normal; _input.Focus(); _input.SelectAll(); }catch{} }
-        public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.max(0,pt.X-Width/2),Math.max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
+        public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.Max(0,pt.X-Width/2),Math.Max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
         public void ShowAndFocusCentered(){ ShowAndFocusCentered(_cfg.window.alwaysOnTop); }
         public void ShowAndFocusCentered(bool alwaysOnTop){ TopMost=alwaysOnTop; StartPosition=FormStartPosition.CenterScreen; Show(); Activate(); FocusInput(); }
         public void SetLoading(string message){ SetKpiValue(_kpiSales7,"—"); SetKpiValue(_kpiInv,"—"); SetKpiValue(_kpiDoc,"—"); SetKpiValue(_kpiMissing,"—"); }
@@ -368,7 +364,7 @@ namespace StyleWatcherWin
             if (_grid.Columns.Contains("日期")) _grid.Columns["日期"].DisplayIndex = 3;
             if (_grid.Columns.Contains("数量")) _grid.Columns["数量"].DisplayIndex = 4;
 
-            // A2：根据解析结果的品名加载库存（取出现次数最多的款式名作为 style）
+            // 从解析结果推断 styleName，加载库存
             var styleName = parsed.Records
                 .Select(r => r.Name)
                 .Where(n => !string.IsNullOrWhiteSpace(n))
@@ -382,7 +378,7 @@ namespace StyleWatcherWin
                 try { _ = _invPage?.LoadInventoryAsync(styleName); } catch {}
             }
 
-            // 概览右上角占位（维持现状；真实占比看“库存”页）
+            // 概览右上角占位（真实占比看“库存”页）
             RenderWarehousePiePlaceholder();
         }
 
@@ -428,12 +424,12 @@ namespace StyleWatcherWin
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
 
-            if(_cfg.ui?.showMovingAverage ?? true){
-                var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
-                var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
-                for(int i=0;i<series.Count;i++) maSeries.Points.Add(new DataPoint(DateTimeAxis.ToDouble(series[i].day), ma[i]));
-                modelTrend.Series.Add(maSeries);
-            }
+            // 默认显示 MA7（不依赖 _cfg.ui）
+            var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
+            var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
+            for(int i=0;i<series.Count;i++) maSeries.Points.Add(new DataPoint(DateTimeAxis.ToDouble(series[i].day), ma[i]));
+            modelTrend.Series.Add(maSeries);
+
             _plotTrend.Model = modelTrend;
 
             // TopN/全量
@@ -450,7 +446,7 @@ namespace StyleWatcherWin
             var sizeCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4, StartPosition=1, EndPosition=0 };
             foreach(var a in sizeAgg) sizeCat.Labels.Add(a.Key);
             modelSize.Axes.Add(sizeCat);
-            modelSize.Axes.Add(new LinearAxis{ Position=AxisPosition.Bottom, MinimumPadding=0, AbsoluteMinimum=0 });
+            modelSize.Axes.Add(new LinearAxis{ Position = AxisPosition.Bottom, MinimumPadding = 0, AbsoluteMinimum = 0 });
             var bsSize = new BarSeries();
             foreach(var a in sizeAgg) bsSize.Items.Add(new BarItem{ Value=a.Qty });
             modelSize.Series.Add(bsSize);
@@ -553,7 +549,7 @@ namespace StyleWatcherWin
             // 口径说明
             var ws3 = wb.AddWorksheet("口径说明");
             ws3.Cell(1,1).Value="趋势窗口（天）"; ws3.Cell(1,2).Value=_trendWindow;
-            ws3.Cell(2,1).Value="是否显示MA7"; ws3.Cell(2,2).Value=(_cfg.ui?.showMovingAverage ?? true) ? "是" : "否";
+            ws3.Cell(2,1).Value="是否显示MA7"; ws3.Cell(2,2).Value="是";
             ws3.Cell(3,1).Value="TopN是否启用"; ws3.Cell(3,2).Value=_chkTopN.Checked ? $"是（Top {DEFAULT_TOPN}）" : "否（全量）";
             ws3.Columns().AdjustToContents();
 

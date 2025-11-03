@@ -322,7 +322,7 @@ namespace StyleWatcherWin
             model.Axes.Add(x);
             model.Axes.Add(y);
 
-            var rbs = new RectangleBarSeries { StrokeThickness = 0.5, StrokeColor = OxyColors.Gray, IsHitTestVisible = false };
+            var rbs = new RectangleBarSeries { StrokeThickness = 0.5, StrokeColor = OxyColors.Gray };
 
             var map = snap.Rows.GroupBy(r => (r.Color, r.Size))
                 .ToDictionary(g => g.Key, g => g.Sum(z => z.Available));
