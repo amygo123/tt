@@ -12,7 +12,6 @@ using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
-using OxyPlot.Legends; // for Legend
 
 namespace StyleWatcherWin
 {
@@ -237,8 +236,13 @@ namespace StyleWatcherWin
             var table = p.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
             if (table != null)
             {
-                var val = table.Controls.OfType<Label>().LastOrDefault();
-                if(val!=null) val.Text=value ?? "—";
+                // 最后一行是数值 Label；如果不存在不赋值，避免空引用
+                var labels = table.Controls.OfType<Label>().ToList();
+                if (labels.Count > 0)
+                {
+                    var val = labels.Last();
+                    val.Text = value ?? "—";
+                }
             }
         }
 
@@ -328,9 +332,7 @@ namespace StyleWatcherWin
             // 1) 趋势（补零，按日）
             var series = Aggregations.BuildDateSeries(cleaned, _trendWindow);
             var modelTrend = new PlotModel { Title = $"近{_trendWindow}日销量趋势", PlotMargins = new OxyThickness(50,10,10,40) };
-            // Legend（兼容不同 OxyPlot 版本）
-            var legend = new Legend { Position = LegendPosition.TopRight };
-            modelTrend.Legends.Add(legend);
+            // 不设置 Legend 位置以兼容旧版 OxyPlot，默认显示即可
 
             var xAxis = new DateTimeAxis{ Position=AxisPosition.Bottom, StringFormat="MM-dd", IntervalType=DateTimeIntervalType.Days, MajorStep=1, MinorStep=1, IntervalLength=60, IsZoomEnabled=false, IsPanEnabled=false, MajorGridlineStyle=LineStyle.Solid };
             var yAxis = new LinearAxis{ Position=AxisPosition.Left, MinimumPadding=0, AbsoluteMinimum=0, MajorGridlineStyle=LineStyle.Solid };
