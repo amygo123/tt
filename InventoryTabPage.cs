@@ -46,15 +46,8 @@ namespace StyleWatcherWin
 
         /// <summary>
         /// 返回库存汇总快照（A2 实现）。A1 占位返回 null。
-        /// 若你在 Aggregations 中已有 InventorySnapshot 类型，此签名与 A2 对齐。
+        /// 注意：A1 不依赖具体类型，先用 object? 占位，A2 再切回 Aggregations.InventorySnapshot。
         /// </summary>
-        public Aggregations.InventorySnapshot? GetSummary() => null;
-
-        // —— 如果你希望 A1 就显示一个“刷新”按钮以避免误操作，也可以加上 no-op —— //
-        // private void DummyRefresh()
-        // {
-        //     // A1 不做网络/IO，避免引入失败路径
-        //     // A2 中会执行 HTTP 请求与数据清洗，并在完成后触发 SummaryUpdated()
-        // }
+        public object? GetSummary() => null;
     }
 }

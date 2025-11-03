@@ -57,7 +57,8 @@ namespace StyleWatcherWin
         private readonly BindingSource _binding = new();
         private readonly TextBox _boxSearch = new();
         private readonly FlowLayoutPanel _filterChips = new(); // 展示从图表点选带来的过滤标签
-        private readonly Timer _searchDebounce = new() { Interval = 200 };
+        // 显式限定为 WinForms 的 Timer，避免与 System.Threading.Timer 产生二义性
+        private readonly System.Windows.Forms.Timer _searchDebounce = new System.Windows.Forms.Timer() { Interval = 200 };
 
         // Inventory page（A1 不依赖，保持占位）
         private InventoryTabPage? _invPage;
@@ -283,7 +284,7 @@ namespace StyleWatcherWin
             if (_grid.Columns.Contains("日期")) _grid.Columns["日期"].DisplayIndex = 3;
             if (_grid.Columns.Contains("数量")) _grid.Columns["数量"].DisplayIndex = 4;
 
-            // A1 暂时用“占位”方式渲染分仓饼图（没有库存 Summary 时显示空饼图），A2 接 InventoryTabPage 的 SummaryUpdated
+            // A1：概览右上角饼图先渲染占位，避免空白；A2 会接真实库存快照
             RenderWarehousePiePlaceholder();
         }
 
@@ -291,7 +292,7 @@ namespace StyleWatcherWin
         {
             var model = new PlotModel { Title = "分仓库存占比" };
             var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6 };
-            // A1：没有库存页联动时，给个占位，避免空白
+            // 占位，保证不空白
             pie.Slices.Add(new PieSlice("无数据", 1));
             model.Series.Add(pie);
             _plotWarehouse.Model = model;
@@ -403,10 +404,8 @@ namespace StyleWatcherWin
             _grid.ClearSelection();
         }
 
-        // —— 从图表点击带入过滤标签（展示/清空） —— //
         private void SetFilterChip(string key, string value, Action onRemove)
         {
-            // 如果已存在相同 key 的 chip，先移除
             foreach (var c in _filterChips.Controls.OfType<Panel>().ToList())
             {
                 if (c.Tag?.ToString()==key) { _filterChips.Controls.Remove(c); c.Dispose(); }
