@@ -150,8 +150,8 @@ namespace StyleWatcherWin
         private PlotView BuildBar(List<Row> data)
         {
             var agg = data.GroupBy(x => x.颜色).Select(g => new { Key = g.Key, Qty = g.Sum(x => x.可用) }).OrderByDescending(x => x.Qty).ToList();
-            var model = new PlotModel { Title = "按颜色可用（降序）" };
-            model.Axes.Add(new CategoryAxis { Position = AxisPosition.Left, ItemsSource = agg, LabelField = "Key" });
+            var model = new PlotModel { Title = "按颜色可用（降序）", PlotMargins = new OxyThickness(80, 6, 6, 6) };
+            model.Axes.Add(new CategoryAxis { Position = AxisPosition.Left, ItemsSource = agg, LabelField = "Key", GapWidth = 0.4 });
             model.Axes.Add(new LinearAxis { Position = AxisPosition.Bottom, MinimumPadding = 0, AbsoluteMinimum = 0 });
             model.Series.Add(new BarSeries { ItemsSource = agg.Select(x => new BarItem { Value = x.Qty }) });
             return new PlotView { Model = model, Dock = DockStyle.Fill };
@@ -159,35 +159,76 @@ namespace StyleWatcherWin
 
         private PlotView BuildHeatmap(List<Row> data)
         {
-            // 类别热力图：X=颜色，Y=尺码
             var colors = data.Select(x => x.颜色 ?? "").Distinct().OrderBy(x => x).ToList();
             var sizes = data.Select(x => x.尺码 ?? "").Distinct().OrderBy(x => x).ToList();
-            var dict = data.GroupBy(x => (x.颜色 ?? "", x.尺码 ?? ""))
-                           .ToDictionary(g => g.Key, g => g.Sum(x => x.可用));
-            int vmax = Math.Max(1, dict.Values.DefaultIfEmpty(0).Max());
 
-            var model = new PlotModel { Title = "库存热力图（颜色×尺码，可用）" };
-            var xAxis = new CategoryAxis { Position = AxisPosition.Bottom, ItemsSource = colors };
-            var yAxis = new CategoryAxis { Position = AxisPosition.Left, ItemsSource = sizes };
-            model.Axes.Add(xAxis); model.Axes.Add(yAxis);
-
-            var series = new RectangleBarSeries { StrokeThickness = 0.5 };
-            for (int xi = 0; xi < colors.Count; xi++)
+            // values[x, y] : x=color index, y=size index
+            var values = new double[colors.Count, sizes.Count];
+            foreach (var g in data.GroupBy(x => (x.颜色 ?? "", x.尺码 ?? "")))
             {
-                for (int yi = 0; yi < sizes.Count; yi++)
-                {
-                    var key = (colors[xi], sizes[yi]);
-                    dict.TryGetValue(key, out var v);
-                    var c = Aggregations.ColorScale(v, vmax);
-                    var item = new RectangleBarItem(xi - 0.5, yi - 0.5, xi + 0.5, yi + 0.5)
-                    {
-                        // Older OxyPlot doesn't have Value property on RectangleBarItem; color only
-                        Color = OxyColor.FromArgb(c.A, c.R, c.G, c.B)
-                    };
-                    series.Items.Add(item);
-                }
+                var x = colors.IndexOf(g.Key.Item1);
+                var y = sizes.IndexOf(g.Key.Item2);
+                if (x >= 0 && y >= 0) values[x, y] = g.Sum(z => z.可用);
             }
-            model.Series.Add(series);
+
+            var vmax = Math.Max(1.0, values.Cast<double>().DefaultIfEmpty(0).Max());
+            var model = new PlotModel { Title = "库存热力图（颜色×尺码，可用）" };
+
+            var xAxis = new LinearAxis
+            {
+                Position = AxisPosition.Bottom,
+                Minimum = -0.5,
+                Maximum = colors.Count - 0.5,
+                MajorStep = 1,
+                MinorStep = 1,
+                Angle = 45,
+                LabelFormatter = v =>
+                {
+                    int i = (int)Math.Round(v);
+                    return (i >= 0 && i < colors.Count) ? colors[i] : "";
+                }
+            };
+            var yAxis = new LinearAxis
+            {
+                Position = AxisPosition.Left,
+                Minimum = -0.5,
+                Maximum = sizes.Count - 0.5,
+                MajorStep = 1,
+                MinorStep = 1,
+                StartPosition = 1, EndPosition = 0,
+                LabelFormatter = v =>
+                {
+                    int i = (int)Math.Round(v);
+                    return (i >= 0 && i < sizes.Count) ? sizes[i] : "";
+                }
+            };
+            var colorAxis = new LinearColorAxis
+            {
+                Position = AxisPosition.Right,
+                Minimum = 0,
+                Maximum = vmax,
+                Palette = OxyPalettes.Jet(200),
+                HighColor = OxyColors.Undefined,
+                LowColor = OxyColors.Undefined
+            };
+
+            model.Axes.Add(xAxis);
+            model.Axes.Add(yAxis);
+            model.Axes.Add(colorAxis);
+
+            var hm = new HeatMapSeries
+            {
+                X0 = 0, X1 = colors.Count - 1,
+                Y0 = 0, Y1 = sizes.Count - 1,
+                Interpolate = false,
+                RenderMethod = HeatMapRenderMethod.Rectangles,
+                Data = values,
+                TrackerFormatString = "颜色: {2:0}\n尺码: {3:0}\n可用: {4:0}"
+            };
+
+            model.Series.Add(hm);
+            model.PlotMargins = new OxyThickness(80, 10, 60, 50);
+
             return new PlotView { Model = model, Dock = DockStyle.Fill };
         }
 
