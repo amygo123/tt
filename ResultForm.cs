@@ -61,10 +61,9 @@ namespace StyleWatcherWin
         private readonly BindingSource _binding = new();
         private readonly TextBox _boxSearch = new();
         private readonly FlowLayoutPanel _filterChips = new(); // 展示从图表点选带来的过滤标签
-        // 显式限定为 WinForms 的 Timer，避免与 System.Threading.Timer 产生二义性
         private readonly System.Windows.Forms.Timer _searchDebounce = new System.Windows.Forms.Timer() { Interval = 200 };
 
-        // Inventory page（A1 不依赖，保持占位）
+        // Inventory page
         private InventoryTabPage? _invPage;
 
         // Caches
@@ -107,7 +106,7 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpi(_kpiSales7,"近7日销量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiInv,"可用库存总量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiDoc,"库存天数","—"));
-            _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺失尺码")); // 换用可滚动小标签容器
+            _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺失尺码"));
             content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -147,7 +146,7 @@ namespace StyleWatcherWin
             host.Margin = new Padding(8,4,8,4);
 
             var inner = new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2};
-            inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));                 // 固定标题行高度，避免遮挡
+            inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=UI.Text,Font=UI.Body,TextAlign=ContentAlignment.MiddleLeft};
@@ -229,7 +228,7 @@ namespace StyleWatcherWin
 
         private void BuildTabs()
         {
-            // 概览：两行两列 + 顶部工具区（趋势窗口切换/TopN开关）
+            // 概览
             var overview = new TabPage("概览"){BackColor=Color.White};
 
             var container = new TableLayoutPanel{Dock=DockStyle.Fill,RowCount=2,ColumnCount=1};
@@ -261,6 +260,11 @@ namespace StyleWatcherWin
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+
+            var _plotTrend = this._plotTrend;
+            var _plotWarehouse = this._plotWarehouse;
+            var _plotSize = this._plotSize;
+            var _plotColor = this._plotColor;
 
             _plotTrend.Dock=DockStyle.Fill;
             _plotWarehouse.Dock=DockStyle.Fill;
@@ -297,8 +301,9 @@ namespace StyleWatcherWin
             detail.Controls.Add(panel);
             _tabs.TabPages.Add(detail);
 
-            // 库存页（A1 暂不改动，只保留 Tab 占位；A2 重构）
-            _invPage = null; // A2 中恢复为 new InventoryTabPage(_cfg)
+            // A2：库存页接线
+            _invPage = new InventoryTabPage(_cfg);
+            _tabs.TabPages.Add(_invPage);
         }
 
         private void SetKpiValue(Panel p,string value)
@@ -317,7 +322,7 @@ namespace StyleWatcherWin
 
         // —— 和 TrayApp.cs 对齐的接口 —— //
         public void FocusInput(){ try{ if(WindowState==FormWindowState.Minimized) WindowState=FormWindowState.Normal; _input.Focus(); _input.SelectAll(); }catch{} }
-        public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.Max(0,pt.X-Width/2),Math.Max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
+        public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.max(0,pt.X-Width/2),Math.max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
         public void ShowAndFocusCentered(){ ShowAndFocusCentered(_cfg.window.alwaysOnTop); }
         public void ShowAndFocusCentered(bool alwaysOnTop){ TopMost=alwaysOnTop; StartPosition=FormStartPosition.CenterScreen; Show(); Activate(); FocusInput(); }
         public void SetLoading(string message){ SetKpiValue(_kpiSales7,"—"); SetKpiValue(_kpiInv,"—"); SetKpiValue(_kpiDoc,"—"); SetKpiValue(_kpiMissing,"—"); }
@@ -350,7 +355,7 @@ namespace StyleWatcherWin
             var sales7 = _sales.Where(x=>x.Date>=DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
             SetKpiValue(_kpiSales7, sales7.ToString());
 
-            // 缺失尺码：展示具体列表（chips，自动换行+小字体）
+            // 缺失尺码 chips
             SetMissingSizes(MissingSizes(_sales.Select(s=>s.Size)));
 
             RenderCharts(_sales);
@@ -363,7 +368,21 @@ namespace StyleWatcherWin
             if (_grid.Columns.Contains("日期")) _grid.Columns["日期"].DisplayIndex = 3;
             if (_grid.Columns.Contains("数量")) _grid.Columns["数量"].DisplayIndex = 4;
 
-            // A1：概览右上角饼图先渲染占位，避免空白；A2 会接真实库存快照
+            // A2：根据解析结果的品名加载库存（取出现次数最多的款式名作为 style）
+            var styleName = parsed.Records
+                .Select(r => r.Name)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .GroupBy(n => n)
+                .OrderByDescending(g => g.Count())
+                .FirstOrDefault()
+                ?.Key ?? "";
+
+            if (!string.IsNullOrWhiteSpace(styleName))
+            {
+                try { _ = _invPage?.LoadInventoryAsync(styleName); } catch {}
+            }
+
+            // 概览右上角占位（维持现状；真实占比看“库存”页）
             RenderWarehousePiePlaceholder();
         }
 
@@ -371,7 +390,6 @@ namespace StyleWatcherWin
         {
             var model = new PlotModel { Title = "分仓库存占比" };
             var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6 };
-            // 占位，保证不空白
             pie.Slices.Add(new PieSlice("无数据", 1));
             model.Series.Add(pie);
             _plotWarehouse.Model = model;
@@ -398,10 +416,9 @@ namespace StyleWatcherWin
         {
             var cleaned = CleanSalesForVisuals(salesItems);
 
-            // 1) 趋势（补零，按日）
+            // 1) 趋势
             var series = Aggregations.BuildDateSeries(cleaned, _trendWindow);
             var modelTrend = new PlotModel { Title = $"近{_trendWindow}日销量趋势", PlotMargins = new OxyThickness(50,10,10,40) };
-            // 不设置 Legend 位置以兼容旧版 OxyPlot，默认显示即可
 
             var xAxis = new DateTimeAxis{ Position=AxisPosition.Bottom, StringFormat="MM-dd", IntervalType=DateTimeIntervalType.Days, MajorStep=1, MinorStep=1, IntervalLength=60, IsZoomEnabled=false, IsPanEnabled=false, MajorGridlineStyle=LineStyle.Solid };
             var yAxis = new LinearAxis{ Position=AxisPosition.Left, MinimumPadding=0, AbsoluteMinimum=0, MajorGridlineStyle=LineStyle.Solid };
@@ -456,7 +473,7 @@ namespace StyleWatcherWin
             modelColor.Series.Add(bsColor);
             _plotColor.Model = modelColor;
 
-            // 4) 分仓占比（A1 占位 + 合并“其他”逻辑保留；A2 用库存快照替换）
+            // 概览右上角保持占位
             RenderWarehousePiePlaceholder();
         }
 
