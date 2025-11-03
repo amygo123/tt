@@ -20,10 +20,6 @@ namespace StyleWatcherWin
         private Aggregations.InventorySnapshot? _snapshot;
         public event Action? SummaryUpdated;
 
-        // global baseline
-        private List<string> _allColors = new();
-        private List<string> _allSizes = new();
-
         public InventoryTabPage(AppConfig cfg)
         {
             _cfg = cfg;
@@ -60,13 +56,7 @@ namespace StyleWatcherWin
                 var raw = await resp.Content.ReadAsStringAsync();
                 var rows = ParseRows(CleanLines(raw)).ToList();
 
-                // 构建全局颜色/尺码清单（用于展示 0）
-                _allColors = rows.Select(r => r.颜色 ?? "").Distinct().OrderBy(x => x).ToList();
-                // 标准尺码优先顺序 + 发现的新尺码
-                var std = new []{"XS","S","M","L","XL","2XL","3XL","4XL","5XL","6XL","KXL","K2XL","K3XL","K4XL"};
-                var rest = rows.Select(r => r.尺码 ?? "").Where(s=>!string.IsNullOrWhiteSpace(s) && !std.Contains(s)).Distinct().OrderBy(s=>s).ToList();
-                _allSizes = std.Concat(rest).ToList();
-
+                // —— 快照（用于概览 KPI 等），不做“0 类别剔除”
                 _snapshot = Aggregations.BuildSnapshot(rows.Select(r => new Aggregations.InventoryRow
                 {
                     品名 = r.品名, 颜色 = r.颜色, 尺码 = r.尺码, 仓库 = r.仓库, 可用 = r.可用, 现有 = r.现有
@@ -85,12 +75,27 @@ namespace StyleWatcherWin
         {
             _tabs.TabPages.Clear();
 
-            // 汇总
+            // —— 可视化用清洗：品名空/异常剔除；按照“颜色汇总=0或空”剔除，“尺码汇总=0或空”剔除（负值不剔）
+            List<Row> CleanForVisuals(IEnumerable<Row> src)
+            {
+                var list = src.Where(r => !string.IsNullOrWhiteSpace(r.品名)
+                                        && !string.IsNullOrWhiteSpace(r.颜色)
+                                        && !string.IsNullOrWhiteSpace(r.尺码))
+                              .ToList();
+
+                var byColor = list.GroupBy(x=>x.颜色).ToDictionary(g=>g.Key, g=>g.Sum(z=>z.可用));
+                var bySize  = list.GroupBy(x=>x.尺码).ToDictionary(g=>g.Key, g=>g.Sum(z=>z.可用));
+                list = list.Where(x => byColor.GetValueOrDefault(x.颜色,0) != 0
+                                     && bySize.GetValueOrDefault(x.尺码,0) != 0).ToList();
+                return list;
+            }
+
+            // 汇总（ALL）
             var summary = rows
                 .GroupBy(r => new { r.颜色, r.尺码 })
                 .Select(g => new Row { 品名 = "汇总", 颜色 = g.Key.颜色, 尺码 = g.Key.尺码, 仓库 = "ALL", 可用 = g.Sum(x => x.可用), 现有 = g.Sum(x => x.现有) })
                 .ToList();
-            _tabs.TabPages.Add(CreateWarehousePage("汇总", summary));
+            _tabs.TabPages.Add(CreateWarehousePage("汇总", summary, CleanForVisuals(summary)));
 
             // 分仓（按可用合计降序）
             var byStore = rows.GroupBy(r => r.仓库)
@@ -99,21 +104,14 @@ namespace StyleWatcherWin
                               .ToList();
             foreach (var st in byStore)
             {
-                _tabs.TabPages.Add(CreateWarehousePage(st.仓库, st.行));
+                _tabs.TabPages.Add(CreateWarehousePage(st.仓库, st.行, CleanForVisuals(st.行)));
             }
         }
 
-        private TabPage CreateWarehousePage(string title, List<Row> dataRaw)
+        private TabPage CreateWarehousePage(string title, List<Row> fullData, List<Row> visualData)
         {
-            // 先补零：确保坐标轴类别完全展示
-            var data = new List<Row>();
-            foreach (var c in _allColors)
-                foreach (var s in _allSizes)
-                    data.Add(new Row { 品名="*", 颜色=c, 尺码=s, 仓库=title, 可用=0, 现有=0 });
-            foreach (var r in dataRaw) data.Add(r);
-
-            // 明细排序：仓库->品名->颜色->尺码；列顺序照此
-            var ordered = data.OrderBy(x=>x.仓库).ThenBy(x=>x.品名).ThenBy(x=>x.颜色).ThenBy(x=>x.尺码).ToList();
+            // 明细排序：仓库->品名->颜色->尺码；列顺序照此（表格展示用“fullData”，可视化用“visualData”）
+            var ordered = fullData.OrderBy(x=>x.仓库).ThenBy(x=>x.品名).ThenBy(x=>x.颜色).ThenBy(x=>x.尺码).ToList();
 
             var page = new TabPage(title) { BackColor = Color.White };
             var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(8) };
@@ -124,18 +122,18 @@ namespace StyleWatcherWin
 
             // KPI
             var kpi = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
-            var totalAvail = dataRaw.Sum(x => x.可用);
-            var totalOnhand = dataRaw.Sum(x => x.现有);
-            kpi.Controls.Add(MakeKpi("可用(合计)", totalAvail.ToString()));
-            kpi.Controls.Add(MakeKpi("现有(合计)", totalOnhand.ToString()));
+            var totalAvail = fullData.Sum(x => x.可用);
+            var totalOnhand = fullData.Sum(x => x.现有);
+            kpi.Controls.Add(MakeKpi("可用合计", totalAvail.ToString()));
+            kpi.Controls.Add(MakeKpi("现有合计", totalOnhand.ToString()));
             layout.Controls.Add(kpi, 0, 0);
 
-            // 图：左热力图 + 右条形图
+            // 图：左热力图 + 右条形图（坐标动态，仅用“visualData”的子集）
             var charts = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
             charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            var heat = BuildHeatmap(ordered);
-            var bar = BuildBar(ordered);
+            var heat = BuildHeatmap(visualData);
+            var bar = BuildBar(visualData);
             charts.Controls.Add(heat, 0, 0);
             charts.Controls.Add(bar, 1, 0);
             layout.Controls.Add(charts, 0, 1);
@@ -171,13 +169,16 @@ namespace StyleWatcherWin
             return p;
         }
 
+        // 颜色可用柱状图（标题精简；坐标轴基于“清洗后子集”）
         private PlotView BuildBar(List<Row> data)
         {
-            // 以 _allColors 为 x 轴基准，缺失的颜色数量为 0
-            var dict = data.GroupBy(x => x.颜色 ?? "").ToDictionary(g => g.Key, g => g.Sum(x => x.可用));
-            var agg = _allColors.Select(c => new { Key = c, Qty = dict.ContainsKey(c) ? dict[c] : 0 }).ToList();
+            var agg = data.GroupBy(x => x.颜色 ?? "")
+                          .Select(g => new { Key = g.Key, Qty = g.Sum(z => z.可用) })
+                          .Where(a => !string.IsNullOrWhiteSpace(a.Key) && a.Qty != 0) // 子集：去掉空/合计为0
+                          .OrderByDescending(a => a.Qty)
+                          .ToList();
 
-            var model = new PlotModel { Title = "按颜色可用（含 0）", PlotMargins = new OxyThickness(80, 6, 6, 6) };
+            var model = new PlotModel { Title = "按颜色可用", PlotMargins = new OxyThickness(80, 6, 6, 6) };
             var cat = new CategoryAxis { Position = AxisPosition.Left, GapWidth = 0.4 };
             foreach (var a in agg) cat.Labels.Add(a.Key);
             model.Axes.Add(cat);
@@ -188,21 +189,26 @@ namespace StyleWatcherWin
             return new PlotView { Model = model, Dock = DockStyle.Fill };
         }
 
+        // 热力图（标题精简；坐标轴基于“清洗后子集”）
         private PlotView BuildHeatmap(List<Row> data)
         {
-            var colors = _allColors;
-            var sizes = _allSizes;
+            var colors = data.GroupBy(x => x.颜色).Select(g => g.Key!).Where(k=>!string.IsNullOrWhiteSpace(k))
+                             .Where(k => data.Where(r => r.颜色 == k).Sum(z => z.可用) != 0)
+                             .OrderBy(k => k).ToList();
+            var sizes  = data.GroupBy(x => x.尺码 ).Select(g => g.Key!).Where(k=>!string.IsNullOrWhiteSpace(k))
+                             .Where(k => data.Where(r => r.尺码 == k).Sum(z => z.可用) != 0)
+                             .OrderBy(k => k).ToList();
 
-            var values = new double[colors.Count, sizes.Count];
+            var values = new double[Math.Max(1,colors.Count), Math.Max(1,sizes.Count)];
             foreach (var g in data.GroupBy(x => (x.颜色 ?? "", x.尺码 ?? "")))
             {
                 var xi = colors.IndexOf(g.Key.Item1);
                 var yi = sizes.IndexOf(g.Key.Item2);
-                if (xi >= 0 && yi >= 0) values[xi, yi] = Math.Max(values[xi, yi], g.Sum(z => z.可用)); // 可用相加
+                if (xi >= 0 && yi >= 0) values[xi, yi] = Math.Max(values[xi, yi], g.Sum(z => z.可用));
             }
 
             var vmax = Math.Max(1.0, values.Cast<double>().DefaultIfEmpty(0).Max());
-            var model = new PlotModel { Title = "库存热力图（颜色×尺码，可用，含 0）" };
+            var model = new PlotModel { Title = "库存热力图" };
 
             var xAxis = new LinearAxis
             {
@@ -246,8 +252,8 @@ namespace StyleWatcherWin
 
             var hm = new HeatMapSeries
             {
-                X0 = 0, X1 = colors.Count - 1,
-                Y0 = 0, Y1 = sizes.Count - 1,
+                X0 = 0, X1 = Math.Max(0, colors.Count - 1),
+                Y0 = 0, Y1 = Math.Max(0, sizes.Count - 1),
                 Interpolate = false,
                 RenderMethod = HeatMapRenderMethod.Rectangles,
                 Data = values,
@@ -294,6 +300,8 @@ namespace StyleWatcherWin
             {
                 var parts = ln.Split('，').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
                 if (parts.Length < 4) continue;
+
+                // 颜色/尺码/品名若为空则视为“异常”，后续清洗时会剔除（这里仍保留原始行，供表格/KPI使用）
                 int available = 0, onhand = 0;
                 if (parts.Length >= 6)
                 {
