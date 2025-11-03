@@ -97,7 +97,7 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpi(_kpiSales7,"近7日销量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiInv,"可用库存总量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiDoc,"库存天数","—"));
-            _kpi.Controls.Add(MakeKpi(_kpiMissing,"缺尺码数","—"));
+            _kpi.Controls.Add(MakeKpi(_kpiMissing,"缺失尺码","—"));
             content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -139,7 +139,7 @@ namespace StyleWatcherWin
             inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=UI.Text,Font=UI.Body,TextAlign=ContentAlignment.MiddleLeft};
-            var v=new Label{Text=value,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI", 18, FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(0,2,0,0)};
+            var v=new Label{Text=value,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI", 16, FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(0,2,0,0)};
 
             inner.Controls.Add(t,0,0);
             inner.Controls.Add(v,0,1);
@@ -223,10 +223,21 @@ namespace StyleWatcherWin
             var avg = salesN / (double)_trendWindow;
             SetKpiValue(_kpiDoc, avg <= 0 ? "—" : Math.Ceiling(snap.总可用 / avg).ToString());
 
+            // 饼图：将占比 <3% 的合并为“其他”
+            double total = snap.分仓可用.Sum(kv=>kv.Value);
+            var big = snap.分仓可用.Where(kv => total == 0 ? true : kv.Value/total >= 0.03)
+                                  .OrderByDescending(kv=>kv.Value)
+                                  .ToList();
+            double other = snap.分仓可用.Where(kv => total == 0 ? false : kv.Value/total < 0.03).Sum(kv=>kv.Value);
+
             var model=new PlotModel{Title="分仓库存占比"};
-            var pie=new PieSeries{AngleSpan=360,StartAngle=0,StrokeThickness=0.5,InsideLabelPosition=0.6};
-            foreach(var kv in snap.分仓可用.OrderByDescending(k=>k.Value))
+            model.IsLegendVisible = true;
+            model.LegendPosition = LegendPosition.RightTop;
+
+            var pie=new PieSeries{AngleSpan=360,StartAngle=0,StrokeThickness=0.5,InsideLabelPosition=0.6,OutsideLabelFormat = "{1}: {2:0}%"};
+            foreach(var kv in big)
                 pie.Slices.Add(new PieSlice(kv.Key, kv.Value));
+            if (other > 0) pie.Slices.Add(new PieSlice("其他", other));
             model.Series.Add(pie);
             _plotWarehouse.Model=model;
         }
@@ -271,7 +282,9 @@ namespace StyleWatcherWin
 
             var sales7 = _sales.Where(x=>x.Date>=DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
             SetKpiValue(_kpiSales7, sales7.ToString());
-            SetKpiValue(_kpiMissing, CountMissingSizes(_sales.Select(s=>s.Size)).ToString());
+
+            // 缺失尺码：展示具体列表
+            SetKpiValue(_kpiMissing, string.Join(" / ", MissingSizes(_sales.Select(s=>s.Size))));
 
             RenderCharts(_sales);
 
@@ -284,11 +297,12 @@ namespace StyleWatcherWin
             if (_grid.Columns.Contains("数量")) _grid.Columns["数量"].DisplayIndex = 4;
         }
 
-        private static int CountMissingSizes(IEnumerable<string> sizes)
+        private static IEnumerable<string> MissingSizes(IEnumerable<string> sizes)
         {
-            var set = new HashSet<string>(sizes.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+            var set = new HashSet<string>(sizes.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparison.OrdinalIgnoreCase);
             var baseline = new []{"XS","S","M","L","XL","2XL","3XL","4XL","5XL","6XL","KXL","K2XL","K3XL","K4XL"};
-            return baseline.Count(s => !set.Contains(s));
+            foreach (var s in baseline)
+                if (!set.Contains(s)) yield return s;
         }
 
         private static List<Aggregations.SalesItem> CleanSalesForVisuals(IEnumerable<Aggregations.SalesItem> src)
@@ -306,10 +320,12 @@ namespace StyleWatcherWin
 
             var series = Aggregations.BuildDateSeries(cleaned, _trendWindow);
             var modelTrend = new PlotModel { Title = $"近{_trendWindow}日销量趋势", PlotMargins = new OxyThickness(50,10,10,40) };
+            modelTrend.IsLegendVisible = true;
+            modelTrend.LegendPosition = LegendPosition.TopRight;
             var xAxis = new DateTimeAxis{ Position=AxisPosition.Bottom, StringFormat="MM-dd", IntervalType=DateTimeIntervalType.Days, MajorStep=1, MinorStep=1, IntervalLength=60, IsZoomEnabled=false, IsPanEnabled=false, MajorGridlineStyle=LineStyle.Solid };
             var yAxis = new LinearAxis{ Position=AxisPosition.Left, MinimumPadding=0, AbsoluteMinimum=0, MajorGridlineStyle=LineStyle.Solid };
             modelTrend.Axes.Add(xAxis); modelTrend.Axes.Add(yAxis);
-            var line = new LineSeries{ MarkerType=MarkerType.Circle };
+            var line = new LineSeries{ Title="销量", MarkerType=MarkerType.Circle };
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
             if(_cfg.ui?.showMovingAverage ?? true){
@@ -324,7 +340,7 @@ namespace StyleWatcherWin
                                  .Where(a=>!string.IsNullOrWhiteSpace(a.Key) && a.Qty!=0)
                                  .OrderByDescending(a=>a.Qty).ToList();
             var modelSize = new PlotModel { Title = "尺码销量", PlotMargins = new OxyThickness(80,6,6,6) };
-            var sizeCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4 };
+            var sizeCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4, StartPosition=1, EndPosition=0 };
             foreach(var a in sizeAgg) sizeCat.Labels.Add(a.Key);
             modelSize.Axes.Add(sizeCat);
             modelSize.Axes.Add(new LinearAxis{ Position=AxisPosition.Bottom, MinimumPadding=0, AbsoluteMinimum=0 });
@@ -337,7 +353,7 @@ namespace StyleWatcherWin
                                   .Where(a=>!string.IsNullOrWhiteSpace(a.Key) && a.Qty!=0)
                                   .OrderByDescending(a=>a.Qty).ToList();
             var modelColor = new PlotModel { Title = "颜色销量", PlotMargins = new OxyThickness(80,6,6,6) };
-            var colorCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4 };
+            var colorCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4, StartPosition=1, EndPosition=0 };
             foreach(var a in colorAgg) colorCat.Labels.Add(a.Key);
             modelColor.Axes.Add(colorCat);
             modelColor.Axes.Add(new LinearAxis{ Position=AxisPosition.Bottom, MinimumPadding=0, AbsoluteMinimum=0 });

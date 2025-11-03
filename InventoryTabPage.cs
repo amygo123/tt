@@ -122,13 +122,29 @@ namespace StyleWatcherWin
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
             page.Controls.Add(layout);
 
-            var kpi = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
+            // KPI + 搜索
+            var kpiRow = new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4};
+            kpiRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            kpiRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            kpiRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
+            kpiRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
             var totalAvail = fullData.Sum(x => x.可用);
             var totalOnhand = fullData.Sum(x => x.现有);
-            kpi.Controls.Add(MakeKpi("可用合计", totalAvail.ToString()));
-            kpi.Controls.Add(MakeKpi("现有合计", totalOnhand.ToString()));
-            layout.Controls.Add(kpi, 0, 0);
 
+            var k1 = MakeKpi("可用合计", totalAvail.ToString());
+            var k2 = MakeKpi("现有合计", totalOnhand.ToString());
+
+            var tb = new TextBox{ Dock = DockStyle.Fill, PlaceholderText="搜索（仓库/品名/颜色/尺码）", Margin=new Padding(12,6,6,6)};
+
+            var btnClear = new Button{ Text="清空", AutoSize=true, Margin=new Padding(6) };
+            kpiRow.Controls.Add(k1,0,0);
+            kpiRow.Controls.Add(k2,1,0);
+            kpiRow.Controls.Add(tb,2,0);
+            kpiRow.Controls.Add(btnClear,3,0);
+            layout.Controls.Add(kpiRow, 0, 0);
+
+            // 图
             var charts = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
             charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
@@ -138,6 +154,10 @@ namespace StyleWatcherWin
             charts.Controls.Add(bar, 1, 0);
             layout.Controls.Add(charts, 0, 1);
 
+            // 表
+            var source = new BindingList<Row>(ordered);
+            var bs = new BindingSource{ DataSource = source };
+
             var grid = new DataGridView
             {
                 Dock = DockStyle.Fill,
@@ -145,7 +165,7 @@ namespace StyleWatcherWin
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells,
-                DataSource = ordered
+                DataSource = bs
             };
             layout.Controls.Add(grid, 0, 2);
             if (grid.Columns.Contains("仓库")) grid.Columns["仓库"].DisplayIndex = 0;
@@ -155,14 +175,44 @@ namespace StyleWatcherWin
             if (grid.Columns.Contains("可用")) grid.Columns["可用"].DisplayIndex = 4;
             if (grid.Columns.Contains("现有")) grid.Columns["现有"].DisplayIndex = 5;
 
+            def_apply = None
+            def_apply = lambda : None
+
+            def filter_apply():
+                q = (tb.Text or "").strip()
+                # Python placeholder; actual filter is wired in C# below.
+
+            # 事件在 C# 中实现：
+            void ApplyFilter()
+            {
+                var q = (tb.Text ?? "").Trim();
+                if (string.IsNullOrEmpty(q))
+                {
+                    bs.DataSource = new BindingList<Row>(ordered);
+                }
+                else
+                {
+                    var filtered = ordered.Where(r =>
+                        (r.仓库?.IndexOf(q, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0 ||
+                        (r.品名?.IndexOf(q, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0 ||
+                        (r.颜色?.IndexOf(q, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0 ||
+                        (r.尺码?.IndexOf(q, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0
+                    ).ToList();
+                    bs.DataSource = new BindingList<Row>(filtered);
+                }
+            }
+
+            tb.TextChanged += (s,e)=> ApplyFilter();
+            btnClear.Click += (s,e)=> { tb.Text=""; ApplyFilter(); };
+
             return page;
         }
 
         private Control MakeKpi(string title, string value)
         {
-            var p = new Panel { Width = 200, Height = 48, BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(8) };
-            var t = new Label { Text = title, Dock = DockStyle.Top, Height = 18 };
-            var v = new Label { Text = value, Dock = DockStyle.Fill, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold) };
+            var p = new Panel { Width = 220, Height = 56, BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(8), Margin=new Padding(6) };
+            var t = new Label { Text = title, Dock = DockStyle.Top, Height = 24, TextAlign = ContentAlignment.MiddleLeft };
+            var v = new Label { Text = value, Dock = DockStyle.Fill, Font = new Font("Microsoft YaHei UI", 11, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
             p.Controls.Add(v); p.Controls.Add(t);
             return p;
         }
@@ -176,7 +226,7 @@ namespace StyleWatcherWin
                           .ToList();
 
             var model = new PlotModel { Title = "按颜色可用", PlotMargins = new OxyThickness(80, 6, 6, 6) };
-            var cat = new CategoryAxis { Position = AxisPosition.Left, GapWidth = 0.4 };
+            var cat = new CategoryAxis { Position = AxisPosition.Left, GapWidth = 0.4, StartPosition=1, EndPosition=0 };
             foreach (var a in agg) cat.Labels.Add(a.Key);
             model.Axes.Add(cat);
             model.Axes.Add(new LinearAxis { Position = AxisPosition.Bottom, MinimumPadding = 0, AbsoluteMinimum = 0 });
@@ -237,7 +287,7 @@ namespace StyleWatcherWin
                 Position = AxisPosition.Right,
                 Minimum = 0,
                 Maximum = vmax,
-                Palette = OxyPalettes.Jet(200),
+                Palette = OxyPalettes.Viridis(200),
                 HighColor = OxyColors.Undefined,
                 LowColor = OxyColors.Undefined
             };
@@ -252,7 +302,8 @@ namespace StyleWatcherWin
                 Y0 = 0, Y1 = Math.Max(0, sizes.Count - 1),
                 Interpolate = false,
                 RenderMethod = HeatMapRenderMethod.Rectangles,
-                Data = values
+                Data = values,
+                TrackerFormatString = null
             };
             model.Series.Add(hm);
             model.PlotMargins = new OxyThickness(80, 10, 60, 50);
