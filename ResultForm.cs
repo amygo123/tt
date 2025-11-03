@@ -15,7 +15,7 @@ namespace StyleWatcherWin
 {
     static class UI
     {
-        public static readonly Font Title = new("Microsoft YaHei UI", 13, FontStyle.Bold);
+        public static readonly Font Title = new("Microsoft YaHei UI", 12, FontStyle.Bold);
         public static readonly Font Body  = new("Microsoft YaHei UI", 10);
         public static readonly Color HeaderBack = Color.FromArgb(245,247,250);
         public static readonly Color CardBack   = Color.FromArgb(250,250,250);
@@ -54,11 +54,11 @@ namespace StyleWatcherWin
         private readonly BindingSource _binding = new();
         private readonly TextBox _boxSearch = new();
 
-        // Inventory page (nullable until BuildTabs assigns)
+        // Inventory page
         private InventoryTabPage? _invPage;
 
         // Caches
-        private string _lastDisplayText = string.Empty; // 上一次解析的原文
+        private string _lastDisplayText = string.Empty;
         private List<Aggregations.SalesItem> _sales = new();
         private List<object> _gridMaster = new();
 
@@ -69,8 +69,8 @@ namespace StyleWatcherWin
 
             Text = "StyleWatcher";
             Font = new Font("Microsoft YaHei UI", _cfg.window.fontSize);
-            Width = Math.Max(1100, _cfg.window.width);
-            Height = Math.Max(720, _cfg.window.height);
+            Width = Math.Max(1200, _cfg.window.width);
+            Height = Math.Max(800, _cfg.window.height);
             StartPosition = FormStartPosition.CenterScreen;
             TopMost = _cfg.window.alwaysOnTop;
             BackColor = Color.White;
@@ -78,7 +78,7 @@ namespace StyleWatcherWin
             KeyDown += (s,e)=>{ if(e.KeyCode==Keys.Escape) Hide(); };
 
             var root = new TableLayoutPanel{Dock=DockStyle.Fill,RowCount=2,ColumnCount=1};
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             Controls.Add(root);
 
@@ -86,7 +86,7 @@ namespace StyleWatcherWin
             root.Controls.Add(header,0,0);
 
             var content = new TableLayoutPanel{Dock=DockStyle.Fill,RowCount=2,ColumnCount=1};
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 130));
             content.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             root.Controls.Add(content,0,1);
 
@@ -95,7 +95,7 @@ namespace StyleWatcherWin
             _kpi.WrapContents = true;
             _kpi.Padding = new Padding(12,8,12,8);
             _kpi.Controls.Add(MakeKpi(_kpiSales7,"近7日销量","—"));
-            _kpi.Controls.Add(MakeKpi(_kpiInv,"可用库存(总)","—"));
+            _kpi.Controls.Add(MakeKpi(_kpiInv,"可用库存总量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiDoc,"库存天数","—"));
             _kpi.Controls.Add(MakeKpi(_kpiMissing,"缺尺码数","—"));
             content.Controls.Add(_kpi,0,0);
@@ -112,11 +112,10 @@ namespace StyleWatcherWin
             head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-            _input.MinimumSize = new Size(360,30);
+            _input.MinimumSize = new Size(420,32);
 
             _btnQuery.Text="重新查询";
             _btnQuery.AutoSize=true; _btnQuery.Padding=new Padding(10,6,10,6);
-            // 关键点：点击时用“上一次成功解析的原文”重渲染，避免把输入框的款式名当原文，导致概览清空
             _btnQuery.Click += async (s,e)=>{ _btnQuery.Enabled=false; try{ await ReloadAsync(""); } finally{ _btnQuery.Enabled=true; } };
 
             _btnExport.Text="导出Excel";
@@ -131,29 +130,41 @@ namespace StyleWatcherWin
 
         private Control MakeKpi(Panel host,string title,string value)
         {
-            host.Width=250; host.Height=98; host.Padding=new Padding(10);
+            host.Width=260; host.Height=110; host.Padding=new Padding(10);
             host.BackColor=UI.CardBack; host.BorderStyle=BorderStyle.FixedSingle;
-            var t=new Label{Text=title,Dock=DockStyle.Top,Height=22,ForeColor=UI.Text};
-            var v=new Label{Text=value,Dock=DockStyle.Fill,Font=new Font(Font,FontStyle.Bold)};
-            host.Controls.Add(v); host.Controls.Add(t);
+            host.Margin = new Padding(8,4,8,4);
+
+            var inner = new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2};
+            inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=UI.Text,Font=UI.Body,TextAlign=ContentAlignment.MiddleLeft};
+            var v=new Label{Text=value,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI", 18, FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(0,2,0,0)};
+
+            inner.Controls.Add(t,0,0);
+            inner.Controls.Add(v,0,1);
+            host.Controls.Clear();
+            host.Controls.Add(inner);
             return host;
         }
 
         private void BuildTabs()
         {
-            // 概览
+            // 概览：两行两列
             var overview = new TabPage("概览"){BackColor=Color.White};
-            var layout = new TableLayoutPanel{Dock=DockStyle.Fill,RowCount=5,ColumnCount=1,Padding=new Padding(12)};
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute,44));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent,40));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent,20));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent,20));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent,20));
+            var grid = new TableLayoutPanel{Dock=DockStyle.Fill,RowCount=2,ColumnCount=2,Padding=new Padding(12)};
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+            grid.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
 
+            // 顶部：7/14/30
+            var topRow = new TableLayoutPanel{Dock=DockStyle.Top,Height=56,ColumnCount=1,RowCount=1,Padding=new Padding(6,8,6,0)};
             _trendSwitch.Dock=DockStyle.Fill;
             _trendSwitch.FlowDirection=FlowDirection.LeftToRight;
             _trendSwitch.WrapContents=false;
-            _trendSwitch.Padding=new Padding(6,8,6,0);
+            _trendSwitch.AutoScroll=true;
+            _trendSwitch.Padding=new Padding(6,6,6,0);
             var wins=_cfg.ui?.trendWindows??new[]{7,14,30};
             foreach(var w in wins.Distinct().OrderBy(x=>x)){
                 var rb=new RadioButton{Text=$"{w} 日",AutoSize=true,Tag=w,Margin=new Padding(0,6,18,0)};
@@ -161,17 +172,23 @@ namespace StyleWatcherWin
                 rb.CheckedChanged+=(s,e)=>{ var me=(RadioButton)s; if(me.Checked){ _trendWindow=(int)me.Tag; if(_sales.Count>0) RenderCharts(_sales); } };
                 _trendSwitch.Controls.Add(rb);
             }
-            layout.Controls.Add(_trendSwitch,0,0);
+            topRow.Controls.Add(_trendSwitch,0,0);
+
+            var container = new Panel{Dock=DockStyle.Fill};
+            container.Controls.Add(grid);
+            container.Controls.Add(topRow);
 
             _plotTrend.Dock=DockStyle.Fill;
+            _plotWarehouse.Dock=DockStyle.Fill;
             _plotSize.Dock=DockStyle.Fill;
             _plotColor.Dock=DockStyle.Fill;
-            _plotWarehouse.Dock=DockStyle.Fill;
-            layout.Controls.Add(_plotTrend,0,1);
-            layout.Controls.Add(_plotSize,0,2);
-            layout.Controls.Add(_plotColor,0,3);
-            layout.Controls.Add(_plotWarehouse,0,4);
-            overview.Controls.Add(layout);
+
+            grid.Controls.Add(_plotTrend,0,0);
+            grid.Controls.Add(_plotWarehouse,1,0);
+            grid.Controls.Add(_plotSize,0,1);
+            grid.Controls.Add(_plotColor,1,1);
+
+            overview.Controls.Add(container);
             _tabs.TabPages.Add(overview);
 
             // 销售明细
@@ -200,19 +217,12 @@ namespace StyleWatcherWin
             var snap=_invPage?.GetSummary();
             if(snap==null) return;
 
-            // 可用总库存
             SetKpiValue(_kpiInv, snap.总可用.ToString());
 
-            // DoC（库存天数）：
-            // days_of_cover = ceil(可用库存 / 最近N天日均销量)。若日均=0，显示“—”
             var salesN = _sales.Where(x=>x.Date>=DateTime.Today.AddDays(-(_trendWindow-1))).Sum(x=>x.Qty);
             var avg = salesN / (double)_trendWindow;
-            if (avg <= 0)
-                SetKpiValue(_kpiDoc, "—");
-            else
-                SetKpiValue(_kpiDoc, Math.Ceiling(snap.总可用 / avg).ToString());
+            SetKpiValue(_kpiDoc, avg <= 0 ? "—" : Math.Ceiling(snap.总可用 / avg).ToString());
 
-            // 分仓占比（饼图）
             var model=new PlotModel{Title="分仓库存占比"};
             var pie=new PieSeries{AngleSpan=360,StartAngle=0,StrokeThickness=0.5,InsideLabelPosition=0.6};
             foreach(var kv in snap.分仓可用.OrderByDescending(k=>k.Value))
@@ -223,11 +233,10 @@ namespace StyleWatcherWin
 
         private void SetKpiValue(Panel p,string value)
         {
-            var val = p.Controls.OfType<Label>().FirstOrDefault(l=>l.Dock==DockStyle.Fill);
+            var val = p.Controls.OfType<TableLayoutPanel>().First().Controls.OfType<Label>().LastOrDefault();
             if(val!=null) val.Text=value ?? "—";
         }
 
-        // ====== Public methods used by TrayApp ======
         public void FocusInput(){ try{ if(WindowState==FormWindowState.Minimized) WindowState=FormWindowState.Normal; _input.Focus(); _input.SelectAll(); }catch{} }
         public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.Max(0,pt.X-Width/2),Math.Max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
         public void ShowAndFocusCentered(){ ShowAndFocusCentered(_cfg.window.alwaysOnTop); }
@@ -237,27 +246,21 @@ namespace StyleWatcherWin
         public async void ApplyRawText(string selection, string parsed){ _input.Text=selection??string.Empty; _lastDisplayText = parsed ?? string.Empty; await LoadTextAsync(parsed??string.Empty); }
         public void ApplyRawText(string text){ _input.Text=text??string.Empty; }
 
-        // ====== Load / Render ======
         public async System.Threading.Tasks.Task LoadTextAsync(string raw)=>await ReloadAsync(raw);
         private async System.Threading.Tasks.Task ReloadAsync()=>await ReloadAsync(_input.Text);
 
         private async System.Threading.Tasks.Task ReloadAsync(string displayText)
         {
             await System.Threading.Tasks.Task.Yield();
-
-            // 如果传入为空，强制使用缓存原文（避免误把款式名当作原文解析）
             if (string.IsNullOrWhiteSpace(displayText))
                 displayText = _lastDisplayText;
 
-            // 解析
             var parsed = Parser.Parse(displayText ?? string.Empty);
 
-            // —— 销售明细行：排序（款式→颜色→尺码→日期↓）并绑定到表格
             var newGrid = parsed.Records
                 .OrderBy(r=>r.Name).ThenBy(r=>r.Color).ThenBy(r=>r.Size).ThenByDescending(r=>r.Date)
                 .Select(r => (object)new { 日期=r.Date.ToString("yyyy-MM-dd"), 款式=r.Name, 颜色=r.Color, 尺码=r.Size, 数量=r.Qty }).ToList();
 
-            // —— 销售聚合：先清洗→再可视化
             var newSales = parsed.Records.Select(r=> new Aggregations.SalesItem{
                 Date=r.Date, Size=r.Size??"", Color=r.Color??"", Qty=r.Qty
             }).ToList();
@@ -266,18 +269,14 @@ namespace StyleWatcherWin
             _sales = newSales;
             _gridMaster = newGrid;
 
-            // KPI（近7日销量 + 缺尺码数）
             var sales7 = _sales.Where(x=>x.Date>=DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
             SetKpiValue(_kpiSales7, sales7.ToString());
             SetKpiValue(_kpiMissing, CountMissingSizes(_sales.Select(s=>s.Size)).ToString());
 
-            // 渲染可视化
             RenderCharts(_sales);
 
-            // 绑定明细
             _binding.DataSource = new BindingList<object>(_gridMaster);
             _grid.ClearSelection();
-            // 列顺序：款式/颜色/尺码/日期/数量
             if (_grid.Columns.Contains("款式")) _grid.Columns["款式"].DisplayIndex = 0;
             if (_grid.Columns.Contains("颜色")) _grid.Columns["颜色"].DisplayIndex = 1;
             if (_grid.Columns.Contains("尺码")) _grid.Columns["尺码"].DisplayIndex = 2;
@@ -285,23 +284,6 @@ namespace StyleWatcherWin
             if (_grid.Columns.Contains("数量")) _grid.Columns["数量"].DisplayIndex = 4;
         }
 
-        // —— 数据清洗（仅用于可视化）：品名为空/异常剔除；颜色/尺码的“汇总为0或空”剔除（负值保留）
-        private static List<Aggregations.SalesItem> CleanSalesForVisuals(IEnumerable<Aggregations.SalesItem> src, IEnumerable<string> validNames)
-        {
-            var list = src.Where(s =>
-                    !string.IsNullOrWhiteSpace(s.Color) &&
-                    !string.IsNullOrWhiteSpace(s.Size))
-                .ToList();
-
-            // 颜色、尺码的“总和为0或空”的类别剔除（允许出现负值，只根据‘合计==0’来判断）
-            var byColor = list.GroupBy(x=>x.Color).ToDictionary(g=>g.Key, g=>g.Sum(z=>z.Qty));
-            var bySize  = list.GroupBy(x=>x.Size ).ToDictionary(g=>g.Key, g=>g.Sum(z=>z.Qty));
-            list = list.Where(x => byColor.GetValueOrDefault(x.Color,0) != 0 && bySize.GetValueOrDefault(x.Size,0) != 0).ToList();
-
-            return list;
-        }
-
-        // 计算“缺尺码数”（以常见尺码清单为基准）
         private static int CountMissingSizes(IEnumerable<string> sizes)
         {
             var set = new HashSet<string>(sizes.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
@@ -309,14 +291,21 @@ namespace StyleWatcherWin
             return baseline.Count(s => !set.Contains(s));
         }
 
+        private static List<Aggregations.SalesItem> CleanSalesForVisuals(IEnumerable<Aggregations.SalesItem> src)
+        {
+            var list = src.Where(s => !string.IsNullOrWhiteSpace(s.Color) && !string.IsNullOrWhiteSpace(s.Size)).ToList();
+            var byColor = list.GroupBy(x=>x.Color).ToDictionary(g=>g.Key, g=>g.Sum(z=>z.Qty));
+            var bySize  = list.GroupBy(x=>x.Size ).ToDictionary(g=>g.Key, g=>g.Sum(z=>z.Qty));
+            list = list.Where(x => byColor.GetValueOrDefault(x.Color,0) != 0 && bySize.GetValueOrDefault(x.Size,0) != 0).ToList();
+            return list;
+        }
+
         private void RenderCharts(List<Aggregations.SalesItem> salesItems)
         {
-            // —— 可视化前清洗（品名判断在 Parser 结果中；此处的 validNames 暂不使用，可保留扩展）
-            var cleaned = CleanSalesForVisuals(salesItems, Array.Empty<string>());
+            var cleaned = CleanSalesForVisuals(salesItems);
 
-            // 趋势（趋势不受颜色/尺码清洗影响，以日期聚合）
             var series = Aggregations.BuildDateSeries(cleaned, _trendWindow);
-            var modelTrend = new PlotModel { Title = $"近 {_trendWindow} 日总销量趋势", PlotMargins = new OxyThickness(50,10,10,40) };
+            var modelTrend = new PlotModel { Title = $"近{_trendWindow}日销量趋势", PlotMargins = new OxyThickness(50,10,10,40) };
             var xAxis = new DateTimeAxis{ Position=AxisPosition.Bottom, StringFormat="MM-dd", IntervalType=DateTimeIntervalType.Days, MajorStep=1, MinorStep=1, IntervalLength=60, IsZoomEnabled=false, IsPanEnabled=false, MajorGridlineStyle=LineStyle.Solid };
             var yAxis = new LinearAxis{ Position=AxisPosition.Left, MinimumPadding=0, AbsoluteMinimum=0, MajorGridlineStyle=LineStyle.Solid };
             modelTrend.Axes.Add(xAxis); modelTrend.Axes.Add(yAxis);
@@ -331,35 +320,29 @@ namespace StyleWatcherWin
             }
             _plotTrend.Model = modelTrend;
 
-            // 尺码（清洗→按合计降序；动态坐标，仅展示子集）
-            var sizeAgg = cleaned.GroupBy(x=>x.Size)
-                                 .Select(g => new { Key=g.Key, Qty=g.Sum(z=>z.Qty) })
-                                 .Where(a => !string.IsNullOrWhiteSpace(a.Key) && a.Qty != 0)
-                                 .OrderByDescending(a=>a.Qty)
-                                 .ToList();
-            var modelSize = new PlotModel { Title = "尺码销量", PlotMargins = new OxyThickness(80,6,6,6) }; // 说明已在代码注释
+            var sizeAgg = cleaned.GroupBy(x=>x.Size).Select(g=> new { Key=g.Key, Qty=g.Sum(z=>z.Qty)})
+                                 .Where(a=>!string.IsNullOrWhiteSpace(a.Key) && a.Qty!=0)
+                                 .OrderByDescending(a=>a.Qty).ToList();
+            var modelSize = new PlotModel { Title = "尺码销量", PlotMargins = new OxyThickness(80,6,6,6) };
             var sizeCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4 };
-            foreach (var a in sizeAgg) sizeCat.Labels.Add(a.Key);
+            foreach(var a in sizeAgg) sizeCat.Labels.Add(a.Key);
             modelSize.Axes.Add(sizeCat);
             modelSize.Axes.Add(new LinearAxis{ Position=AxisPosition.Bottom, MinimumPadding=0, AbsoluteMinimum=0 });
             var bsSize = new BarSeries();
-            foreach (var a in sizeAgg) bsSize.Items.Add(new BarItem{ Value=a.Qty });
+            foreach(var a in sizeAgg) bsSize.Items.Add(new BarItem{ Value=a.Qty });
             modelSize.Series.Add(bsSize);
             _plotSize.Model = modelSize;
 
-            // 颜色（清洗→按合计降序；动态坐标，仅展示子集）
-            var colorAgg = cleaned.GroupBy(x=>x.Color)
-                                  .Select(g => new { Key=g.Key, Qty=g.Sum(z=>z.Qty) })
-                                  .Where(a => !string.IsNullOrWhiteSpace(a.Key) && a.Qty != 0)
-                                  .OrderByDescending(a=>a.Qty)
-                                  .ToList();
+            var colorAgg = cleaned.GroupBy(x=>x.Color).Select(g=> new { Key=g.Key, Qty=g.Sum(z=>z.Qty)})
+                                  .Where(a=>!string.IsNullOrWhiteSpace(a.Key) && a.Qty!=0)
+                                  .OrderByDescending(a=>a.Qty).ToList();
             var modelColor = new PlotModel { Title = "颜色销量", PlotMargins = new OxyThickness(80,6,6,6) };
             var colorCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4 };
-            foreach (var a in colorAgg) colorCat.Labels.Add(a.Key);
+            foreach(var a in colorAgg) colorCat.Labels.Add(a.Key);
             modelColor.Axes.Add(colorCat);
             modelColor.Axes.Add(new LinearAxis{ Position=AxisPosition.Bottom, MinimumPadding=0, AbsoluteMinimum=0 });
             var bsColor = new BarSeries();
-            foreach (var a in colorAgg) bsColor.Items.Add(new BarItem{ Value=a.Qty });
+            foreach(var a in colorAgg) bsColor.Items.Add(new BarItem{ Value=a.Qty });
             modelColor.Series.Add(bsColor);
             _plotColor.Model = modelColor;
         }
