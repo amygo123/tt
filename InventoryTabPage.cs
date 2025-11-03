@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Drawing;
 using System.Linq;
 using System.Net.Http;
@@ -17,8 +16,7 @@ namespace StyleWatcherWin
     public class InventoryTabPage : TabPage
     {
         private readonly AppConfig _cfg;
-        private readonly TabControl _tabs = new TabControl();
-
+        private readonly TabControl _tabs = new();
         private Aggregations.InventorySnapshot? _snapshot;
         public event Action? SummaryUpdated;
 
@@ -36,8 +34,8 @@ namespace StyleWatcherWin
 
         public void ShowWarehouse(string name)
         {
-            foreach (TabPage p in _tabs.TabPages)
-                if (string.Equals(p.Text, name, StringComparison.OrdinalIgnoreCase)) { _tabs.SelectedTab = p; return; }
+            foreach(TabPage p in _tabs.TabPages)
+                if (string.Equals(p.Text,name,StringComparison.OrdinalIgnoreCase)){ _tabs.SelectedTab=p; return; }
         }
 
         private async Task RefreshAsync()
@@ -56,7 +54,6 @@ namespace StyleWatcherWin
                 var resp = await http.SendAsync(req);
                 resp.EnsureSuccessStatusCode();
                 var raw = await resp.Content.ReadAsStringAsync();
-
                 var rows = ParseRows(CleanLines(raw)).ToList();
 
                 _snapshot = Aggregations.BuildSnapshot(rows.Select(r => new Aggregations.InventoryRow
@@ -162,7 +159,6 @@ namespace StyleWatcherWin
             var colors = data.Select(x => x.颜色 ?? "").Distinct().OrderBy(x => x).ToList();
             var sizes = data.Select(x => x.尺码 ?? "").Distinct().OrderBy(x => x).ToList();
 
-            // values[x, y] : x=color index, y=size index
             var values = new double[colors.Count, sizes.Count];
             foreach (var g in data.GroupBy(x => (x.颜色 ?? "", x.尺码 ?? "")))
             {
@@ -182,8 +178,7 @@ namespace StyleWatcherWin
                 MajorStep = 1,
                 MinorStep = 1,
                 Angle = 45,
-                LabelFormatter = v =>
-                {
+                LabelFormatter = v => {
                     int i = (int)Math.Round(v);
                     return (i >= 0 && i < colors.Count) ? colors[i] : "";
                 }
@@ -196,8 +191,7 @@ namespace StyleWatcherWin
                 MajorStep = 1,
                 MinorStep = 1,
                 StartPosition = 1, EndPosition = 0,
-                LabelFormatter = v =>
-                {
+                LabelFormatter = v => {
                     int i = (int)Math.Round(v);
                     return (i >= 0 && i < sizes.Count) ? sizes[i] : "";
                 }
