@@ -40,7 +40,7 @@ namespace StyleWatcherWin
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
         private readonly Panel _kpiMissing = new();
-        private FlowLayoutPanel? _kpiMissingFlow; // 缺尺码专用流式布局
+        private FlowLayoutPanel? _kpiMissingFlow;
 
         // Tabs
         private readonly TabControl _tabs = new();
@@ -52,14 +52,12 @@ namespace StyleWatcherWin
         private readonly PlotView _plotSize = new();
         private readonly PlotView _plotColor = new();
         private readonly PlotView _plotWarehouse = new();
-        private readonly CheckBox _chkTopN = new() { Text = "只看 Top 10", Checked = true, AutoSize = true, Margin = new Padding(0,0,10,0) };
-        private const int DEFAULT_TOPN = 10;
 
         // Detail
         private readonly DataGridView _grid = new();
         private readonly BindingSource _binding = new();
         private readonly TextBox _boxSearch = new();
-        private readonly FlowLayoutPanel _filterChips = new(); // 展示从图表点选带来的过滤标签
+        private readonly FlowLayoutPanel _filterChips = new();
         private readonly System.Windows.Forms.Timer _searchDebounce = new System.Windows.Forms.Timer() { Interval = 200 };
 
         // Inventory page
@@ -109,7 +107,7 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpi(_kpiSales7,"近7日销量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiInv,"可用库存总量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiDoc,"库存天数","—"));
-            _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺失尺码")); // 确保标题存在
+            _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺失尺码"));
             content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -127,6 +125,7 @@ namespace StyleWatcherWin
             head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             _input.MinimumSize = new Size(420,32);
+            _input.Height = 30;
 
             _btnQuery.Text="重新查询";
             _btnQuery.AutoSize=true; _btnQuery.Padding=new Padding(10,6,10,6);
@@ -162,7 +161,6 @@ namespace StyleWatcherWin
             return host;
         }
 
-        // 缺尺码 KPI：顶部标题 + 中部滚动 chips（小字体，可换行）
         private Control MakeKpiMissing(Panel host, string title)
         {
             host.Width=260; host.Height=110; host.Padding=new Padding(10);
@@ -238,14 +236,13 @@ namespace StyleWatcherWin
             container.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
             container.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            // 顶部工具区
+            // 顶部工具区（只保留 7/14/30）
             var tools = new FlowLayoutPanel{Dock=DockStyle.Fill, FlowDirection=FlowDirection.LeftToRight, WrapContents=false, AutoScroll=true, Padding=new Padding(12,10,12,0)};
             _trendSwitch.FlowDirection=FlowDirection.LeftToRight;
             _trendSwitch.WrapContents=false;
             _trendSwitch.AutoSize=true;
             _trendSwitch.Padding=new Padding(0,0,12,0);
 
-            // 使用固定窗口（避免依赖 _cfg.ui）
             var wins=new int[]{7,14,30};
             foreach(var w in wins.Distinct().OrderBy(x=>x)){
                 var rb=new RadioButton{Text=$"{w} 日",AutoSize=true,Tag=w,Margin=new Padding(0,2,18,0)};
@@ -254,8 +251,6 @@ namespace StyleWatcherWin
                 _trendSwitch.Controls.Add(rb);
             }
             tools.Controls.Add(_trendSwitch);
-            _chkTopN.CheckedChanged += (s,e)=> { if(_sales.Count>0) RenderCharts(_sales); };
-            tools.Controls.Add(_chkTopN);
 
             container.Controls.Add(tools,0,0);
 
@@ -301,9 +296,8 @@ namespace StyleWatcherWin
             detail.Controls.Add(panel);
             _tabs.TabPages.Add(detail);
 
-            // 库存页接线（不依赖 _cfg.ui）
+            // 库存页
             _invPage = new InventoryTabPage(_cfg);
-            // 订阅库存汇总事件：用于 KPI & 概览饼图
             _invPage.SummaryUpdated += OnInventorySummary;
             _tabs.TabPages.Add(_invPage);
         }
@@ -423,7 +417,6 @@ namespace StyleWatcherWin
             }
             else
             {
-                // 阈值 3%，但至少保留 3 个分仓不计入“其他”
                 var keep = list.Where(kv => kv.Value / total >= 0.03).ToList();
                 if (keep.Count < 3)
                     keep = list.Take(3).ToList();
@@ -477,22 +470,17 @@ namespace StyleWatcherWin
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
 
-            // 默认显示 MA7
             var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
             var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
             for(int i=0;i<series.Count;i++) maSeries.Points.Add(new DataPoint(DateTimeAxis.ToDouble(series[i].day), ma[i]));
             modelTrend.Series.Add(maSeries);
             _plotTrend.Model = modelTrend;
 
-            // TopN/全量
-            int? topN = _chkTopN.Checked ? DEFAULT_TOPN : null;
-
-            // 2) 尺码销量（降序）
+            // 2) 尺码销量（降序，全量）
             var sizeAgg = cleaned.GroupBy(x=>x.Size).Select(g=> new { Key=g.Key, Qty=g.Sum(z=>z.Qty)})
                                  .Where(a=>!string.IsNullOrWhiteSpace(a.Key) && a.Qty!=0)
                                  .OrderByDescending(a=>a.Qty)
                                  .ToList();
-            if(topN.HasValue) sizeAgg = sizeAgg.Take(topN.Value).ToList();
 
             var modelSize = new PlotModel { Title = "尺码销量", PlotMargins = new OxyThickness(80,6,6,6) };
             var sizeCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4, StartPosition=1, EndPosition=0 };
@@ -504,18 +492,17 @@ namespace StyleWatcherWin
             modelSize.Series.Add(bsSize);
             _plotSize.Model = modelSize;
 
-            // 3) 颜色销量（降序）
+            // 3) 颜色销量（降序，全量）
             var colorAgg = cleaned.GroupBy(x=>x.Color).Select(g=> new { Key=g.Key, Qty=g.Sum(z=>z.Qty)})
                                   .Where(a=>!string.IsNullOrWhiteSpace(a.Key) && a.Qty!=0)
                                   .OrderByDescending(a=>a.Qty)
                                   .ToList();
-            if(topN.HasValue) colorAgg = colorAgg.Take(topN.Value).ToList();
 
             var modelColor = new PlotModel { Title = "颜色销量", PlotMargins = new OxyThickness(80,6,6,6) };
             var colorCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4, StartPosition=1, EndPosition=0 };
             foreach(var a in colorAgg) colorCat.Labels.Add(a.Key);
             modelColor.Axes.Add(colorCat);
-            modelColor.Axes.Add(new LinearAxis{ Position=AxisPosition.Bottom, MinimumPadding=0, AbsoluteMinimum=0 });
+            modelColor.Axes.Add(new LinearAxis{ Position = AxisPosition.Bottom, MinimumPadding=0, AbsoluteMinimum=0 });
             var bsColor = new BarSeries();
             foreach(var a in colorAgg) bsColor.Items.Add(new BarItem{ Value=a.Qty });
             modelColor.Series.Add(bsColor);
@@ -542,20 +529,6 @@ namespace StyleWatcherWin
             }).ToList();
             _binding.DataSource = new BindingList<object>(filtered);
             _grid.ClearSelection();
-        }
-
-        private void SetFilterChip(string key, string value, Action onRemove)
-        {
-            foreach (var c in _filterChips.Controls.OfType<Panel>().ToList())
-            {
-                if (c.Tag?.ToString()==key) { _filterChips.Controls.Remove(c); c.Dispose(); }
-            }
-            var p = new Panel { Height=26, Padding=new Padding(8,4,8,4), BackColor=Color.FromArgb(240,240,240), Margin=new Padding(0,3,6,3), Tag=key, AutoSize=true };
-            var lbl = new Label { AutoSize=true, Text=$"{key}: {value}" };
-            var btn = new Button { Text="×", AutoSize=true, Margin=new Padding(6,0,0,0) };
-            btn.Click += (s,e)=>{ onRemove?.Invoke(); _filterChips.Controls.Remove(p); p.Dispose(); ApplyFilter(_boxSearch.Text); };
-            p.Controls.Add(lbl); p.Controls.Add(btn);
-            _filterChips.Controls.Add(p);
         }
 
         private void ExportExcel()
@@ -599,7 +572,6 @@ namespace StyleWatcherWin
             var ws3 = wb.AddWorksheet("口径说明");
             ws3.Cell(1,1).Value="趋势窗口（天）"; ws3.Cell(1,2).Value=_trendWindow;
             ws3.Cell(2,1).Value="是否显示MA7"; ws3.Cell(2,2).Value="是";
-            ws3.Cell(3,1).Value="TopN是否启用"; ws3.Cell(3,2).Value=_chkTopN.Checked ? $"是（Top {DEFAULT_TOPN}）" : "否（全量）";
             ws3.Columns().AdjustToContents();
 
             wb.SaveAs(path);
