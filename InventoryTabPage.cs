@@ -50,8 +50,9 @@ namespace StyleWatcherWin
 
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(3, _cfg.timeout_seconds)) };
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                foreach (var kv in _cfg.headers)
-                    req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                // headers: Config.Headers 目前不是可枚举集合，仅提供 Content_Type
+                if (!string.IsNullOrWhiteSpace(_cfg.headers?.Content_Type))
+                    req.Headers.TryAddWithoutValidation("Content-Type", _cfg.headers.Content_Type);
 
                 var resp = await http.SendAsync(req);
                 resp.EnsureSuccessStatusCode();
