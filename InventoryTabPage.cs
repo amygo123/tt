@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -16,10 +15,13 @@ namespace StyleWatcherWin
 {
     /// <summary>
     /// A2：库存页 —— 自包含的数据模型与聚合，不依赖 Aggregations.*（避免全局耦合）
-    /// 增强：子Tab内各自的搜索框；热力图颜色更易分辨；饼图显示百分比、合并小项。
+    /// 增强：子Tab内各自的搜索框；热力图颜色更易分辨；饼图显示百分比、合并小项；点击热力图展示业务信息；对外发布 SummaryUpdated 事件。
     /// </summary>
     public class InventoryTabPage : TabPage
     {
+        // —— 对外事件：用于概览 KPI 与饼图 —— //
+        public event Action<int,int,Dictionary<string,int>> SummaryUpdated;
+
         // —— 内部数据模型 —— //
         private sealed class InvRow
         {
@@ -137,6 +139,9 @@ namespace StyleWatcherWin
             grid.Controls.Add(_pvPie,  1, 0);
             grid.Controls.Add(_pvColor,0, 1);
             grid.Controls.Add(_pvSize, 1, 1);
+
+            // 点击热力图显示业务信息
+            AttachClickTracker(_pvHeat);
             return grid;
         }
 
@@ -239,6 +244,12 @@ namespace StyleWatcherWin
             RenderBarsBySize (snap, _pvSize,  "尺码可用（降序）");
             RenderWarehousePie(snap, _pvPie,  "分仓占比");
 
+            // 对外发布汇总（用于概览 KPI & 饼图）
+            try
+            {
+                SummaryUpdated?.Invoke(snap.TotalAvailable, snap.TotalOnHand, snap.ByWarehouse());
+            } catch {}
+
             // 子 Tab：按仓库降序创建
             BuildWarehouseTabs(snap);
         }
@@ -265,7 +276,7 @@ namespace StyleWatcherWin
 
         private Control BuildWarehousePanel(InvSnapshot baseSnap, bool showWarehouseColumn)
         {
-            // 三行：工具条(含子搜索+合计) + 上排两图 + 下排明细与一图
+            // 三行：工具条(含子搜索+合计) + 上排两图(尺码/颜色) + 下排(热力图/明细)
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(6) };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
@@ -289,15 +300,18 @@ namespace StyleWatcherWin
             root.Controls.Add(top, 0, 1);
             root.Controls.Add(bottom, 0, 2);
 
-            var pvHeat = new PlotView { Dock = DockStyle.Fill };
-            var pvColor = new PlotView { Dock = DockStyle.Fill };
             var pvSize  = new PlotView { Dock = DockStyle.Fill };
-            var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, RowHeadersVisible = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells };
+            var pvColor = new PlotView { Dock = DockStyle.Fill };
+            var pvHeat  = new PlotView { Dock = DockStyle.Fill };
+            var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, RowHeadersVisible = false, AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.AllCells };
 
-            top.Controls.Add(pvHeat, 0, 0);
+            // 位置：上排（尺码、颜色），下排（热力图、明细）
+            top.Controls.Add(pvSize,  0, 0);
             top.Controls.Add(pvColor, 1, 0);
-            bottom.Controls.Add(pvSize, 0, 0);
-            bottom.Controls.Add(grid, 1, 0);
+            bottom.Controls.Add(pvHeat, 0, 0);
+            bottom.Controls.Add(grid,   1, 0);
+
+            AttachClickTracker(pvHeat);
 
             // —— 局部渲染器 —— //
             void RenderLocal(InvSnapshot snap)
@@ -453,11 +467,11 @@ namespace StyleWatcherWin
 
         private static void RenderWarehousePie(InvSnapshot snap, PlotView pv, string title)
         {
-            var agg = snap.Rows.GroupBy(r => r.Warehouse).Select(g => new { Key = g.Key, Qty = g.Sum(x => x.Available) })
+            var list = snap.Rows.GroupBy(r => r.Warehouse).Select(g => new { Key = g.Key, Qty = g.Sum(x => x.Available) })
                 .Where(x => !string.IsNullOrWhiteSpace(x.Key) && x.Qty > 0)
                 .OrderByDescending(x => x.Qty).ToList();
 
-            var total = agg.Sum(x => x.Qty);
+            var total = list.Sum(x => (double)x.Qty);
             var model = new PlotModel { Title = title };
             var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6, InsideLabelFormat = "{1:0}%" };
 
@@ -467,24 +481,35 @@ namespace StyleWatcherWin
             }
             else
             {
-                // 小于 5% 合并为“其他”，并对标签名称做适度裁剪
+                // 阈值 3%，但至少保留 3 个分仓不计入“其他”
+                var keep = list.Where(x => x.Qty / total >= 0.03).ToList();
+                if (keep.Count < 3)
+                    keep = list.Take(3).ToList();
+
+                var keepSet = new HashSet<string>(keep.Select(k => k.Key));
                 double other = 0;
-                foreach (var a in agg)
+                foreach (var a in list)
                 {
-                    var ratio = (double)a.Qty / total;
-                    if (ratio < 0.05) other += a.Qty;
-                    else pie.Slices.Add(new PieSlice(Short(a.Key, 10), a.Qty));
+                    if (keepSet.Contains(a.Key)) pie.Slices.Add(new PieSlice(a.Key, a.Qty));
+                    else other += a.Qty;
                 }
                 if (other > 0) pie.Slices.Add(new PieSlice("其他", other));
             }
             model.Series.Add(pie);
             pv.Model = model;
+        }
 
-            static string Short(string s, int max)
+        // —— 交互：单击显示 tracker —— //
+        private static void AttachClickTracker(PlotView pv)
+        {
+            try
             {
-                if (string.IsNullOrEmpty(s)) return s ?? "";
-                return s.Length <= max ? s : (s.Substring(0, max) + "…");
+                var ctl = new PlotController();
+                ctl.UnbindMouseDown(OxyMouseButton.Left);
+                ctl.BindMouseDown(OxyMouseButton.Left, PlotCommands.PointsOnlyTrack);
+                pv.Controller = ctl;
             }
+            catch {}
         }
     }
 }

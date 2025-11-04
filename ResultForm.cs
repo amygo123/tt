@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -71,6 +70,11 @@ namespace StyleWatcherWin
         private List<Aggregations.SalesItem> _sales = new();
         private List<object> _gridMaster = new();
 
+        // cached inventory totals from event
+        private int _invAvailTotal = 0;
+        private int _invOnHandTotal = 0;
+        private Dictionary<string,int> _invWarehouse = new Dictionary<string,int>();
+
         public ResultForm(AppConfig cfg)
         {
             _cfg = cfg;
@@ -105,7 +109,7 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpi(_kpiSales7,"近7日销量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiInv,"可用库存总量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiDoc,"库存天数","—"));
-            _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺失尺码"));
+            _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺失尺码")); // 确保标题存在
             content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -299,6 +303,8 @@ namespace StyleWatcherWin
 
             // 库存页接线（不依赖 _cfg.ui）
             _invPage = new InventoryTabPage(_cfg);
+            // 订阅库存汇总事件：用于 KPI & 概览饼图
+            _invPage.SummaryUpdated += OnInventorySummary;
             _tabs.TabPages.Add(_invPage);
         }
 
@@ -351,7 +357,7 @@ namespace StyleWatcherWin
             var sales7 = _sales.Where(x=>x.Date>=DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
             SetKpiValue(_kpiSales7, sales7.ToString());
 
-            // 缺失尺码 chips
+            // 缺失尺码 chips（按销售基线）
             SetMissingSizes(MissingSizes(_sales.Select(s=>s.Size)));
 
             RenderCharts(_sales);
@@ -377,16 +383,63 @@ namespace StyleWatcherWin
             {
                 try { _ = _invPage?.LoadInventoryAsync(styleName); } catch {}
             }
-
-            // 概览右上角占位（真实占比看“库存”页）
-            RenderWarehousePiePlaceholder();
         }
 
-        private void RenderWarehousePiePlaceholder()
+        private void OnInventorySummary(int totalAvail, int totalOnHand, Dictionary<string,int> warehouseAgg)
+        {
+            _invAvailTotal = totalAvail;
+            _invOnHandTotal = totalOnHand;
+            _invWarehouse = warehouseAgg ?? new Dictionary<string,int>();
+
+            SetKpiValue(_kpiInv, totalAvail.ToString());
+
+            // 库存天数：用最近7日平均销量
+            var last7 = _sales.Where(x=> x.Date >= DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
+            var avg = last7 / 7.0;
+            string days = "—";
+            if (avg > 0)
+            {
+                var d = Math.Round(totalAvail / avg, 1);
+                days = d.ToString("0.0");
+            }
+            SetKpiValue(_kpiDoc, days);
+
+            // 概览页：用真实分仓占比渲染
+            RenderWarehousePieOverview(_invWarehouse);
+        }
+
+        private void RenderWarehousePieOverview(Dictionary<string,int> warehouseAgg)
         {
             var model = new PlotModel { Title = "分仓库存占比" };
             var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6, InsideLabelFormat = "{1:0}%" };
-            pie.Slices.Add(new PieSlice("无数据", 1));
+
+            var list = warehouseAgg.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && kv.Value > 0)
+                                   .OrderByDescending(kv => kv.Value).ToList();
+            var total = list.Sum(x => (double)x.Value);
+
+            if (total <= 0)
+            {
+                pie.Slices.Add(new PieSlice("无数据", 1));
+            }
+            else
+            {
+                // 阈值 3%，但至少保留 3 个分仓不计入“其他”
+                var keep = list.Where(kv => kv.Value / total >= 0.03).ToList();
+                if (keep.Count < 3)
+                    keep = list.Take(3).ToList();
+
+                var keepSet = new HashSet<string>(keep.Select(k => k.Key));
+                double other = 0;
+                foreach (var kv in list)
+                {
+                    if (keepSet.Contains(kv.Key))
+                        pie.Slices.Add(new PieSlice(kv.Key, kv.Value));
+                    else
+                        other += kv.Value;
+                }
+                if (other > 0) pie.Slices.Add(new PieSlice("其他", other));
+            }
+
             model.Series.Add(pie);
             _plotWarehouse.Model = model;
         }
@@ -467,9 +520,6 @@ namespace StyleWatcherWin
             foreach(var a in colorAgg) bsColor.Items.Add(new BarItem{ Value=a.Qty });
             modelColor.Series.Add(bsColor);
             _plotColor.Model = modelColor;
-
-            // 概览右上角保持占位
-            RenderWarehousePiePlaceholder();
         }
 
         private void ApplyFilter(string q)
