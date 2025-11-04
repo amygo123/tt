@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+#pragma warning disable 0618
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
@@ -15,7 +16,7 @@ namespace StyleWatcherWin
 {
     public class InventoryTabPage : TabPage
     {
-        public event Action<int,int,Dictionary<string,int>> SummaryUpdated;
+        public event Action<int,int,Dictionary<string,int>>? SummaryUpdated;
 
         private sealed class InvRow
         {
@@ -501,3 +502,5 @@ namespace StyleWatcherWin
         }
     }
 }
+
+#pragma warning restore 0618

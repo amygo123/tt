@@ -265,7 +265,7 @@ namespace StyleWatcherWin
             {
                 ReleaseAlt();
 
-                string txt = TryGetSelectedTextUsingWin32();
+                string txt = TryGetSelectedTextUsingWin32() ?? string.Empty;
                 if (string.IsNullOrEmpty(txt)) txt = await GetSelectionByClipboardRoundTripAsync();
 
                 EnsureWindow();
