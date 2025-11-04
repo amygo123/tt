@@ -110,7 +110,7 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpi(_kpiSales7,"近7日销量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiInv,"可用库存总量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiDoc,"库存天数","—"));
-            _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺失尺码"));
+            _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;

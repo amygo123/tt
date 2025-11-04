@@ -124,8 +124,8 @@ namespace StyleWatcherWin
 
             grid.Controls.Add(_pvHeat, 0, 0);
             grid.Controls.Add(_pvPie,  1, 0);
-            grid.Controls.Add(_pvColor,0, 1);
-            grid.Controls.Add(_pvSize, 1, 1);
+            grid.Controls.Add(_pvSize, 0, 1);
+            grid.Controls.Add(_pvColor, 1, 1);
 
             AttachClickTracker(_pvHeat);
             return grid;
@@ -252,14 +252,14 @@ namespace StyleWatcherWin
         private Control BuildWarehousePanel(InvSnapshot baseSnap, bool showWarehouseColumn)
         {
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(6) };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
 
             var qBox = new TextBox { PlaceholderText = "筛选本仓（颜色/尺码）", Width = 320, Height=28, Margin=new Padding(0,6,12,0) };
             var lblA = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 9, FontStyle.Bold), Margin = new Padding(10,8,0,0) };
             var lblH = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 9, FontStyle.Bold), Margin = new Padding(10,8,0,0) };
-            var tools = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+            var tools = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
             tools.Controls.Add(qBox); tools.Controls.Add(lblA); tools.Controls.Add(lblH);
             root.Controls.Add(tools, 0, 0);
 
@@ -369,7 +369,7 @@ namespace StyleWatcherWin
 
             var rbs = new RectangleBarSeries { StrokeThickness = 0.5, StrokeColor = OxyColors.Gray };
             // 禁止 rbs 吞掉点击，避免默认 X/Y tracker
-            rbs.MouseDown += (s,e)=> { e.Handled = true; };
+            // removed to allow tracker click through
 
             var map = snap.Rows.GroupBy(r => (r.Color, r.Size))
                 .ToDictionary(g => g.Key, g => g.Sum(z => z.Available));
@@ -428,6 +428,8 @@ namespace StyleWatcherWin
             var model = new PlotModel { Title = title, PlotMargins = new OxyThickness(80,6,8,8) };
             var cat = new CategoryAxis { Position = AxisPosition.Left, StartPosition = 1, EndPosition = 0 };
             foreach (var a in agg) cat.Labels.Add(a.Key);
+            if (cat.Labels.Count > 10) { cat.Minimum = -0.5; cat.Maximum = 9.5; }
+            if (cat.Labels.Count > 10) { cat.Minimum = -0.5; cat.Maximum = 9.5; }
             model.Axes.Add(cat);
             model.Axes.Add(new LinearAxis { Position = AxisPosition.Bottom, MinimumPadding = 0, AbsoluteMinimum = 0 });
 
@@ -447,6 +449,8 @@ namespace StyleWatcherWin
             var model = new PlotModel { Title = title, PlotMargins = new OxyThickness(80,6,8,8) };
             var cat = new CategoryAxis { Position = AxisPosition.Left, StartPosition = 1, EndPosition = 0 };
             foreach (var a in agg) cat.Labels.Add(a.Key);
+            if (cat.Labels.Count > 10) { cat.Minimum = -0.5; cat.Maximum = 9.5; }
+            if (cat.Labels.Count > 10) { cat.Minimum = -0.5; cat.Maximum = 9.5; }
             model.Axes.Add(cat);
             model.Axes.Add(new LinearAxis { Position = AxisPosition.Bottom, MinimumPadding = 0, AbsoluteMinimum = 0 });
 
