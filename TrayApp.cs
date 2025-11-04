@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -35,9 +34,8 @@ namespace StyleWatcherWin
         [DllImport("user32.dll")] static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
 
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-        [DllImport("user32.dll")] static extern IntPtr GetFocus(); // 必须有
+        [DllImport("user32.dll")] static extern IntPtr GetFocus();
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-        [DllImport("user32.dll")] static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
         [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
         [DllImport("user32.dll", CharSet = CharSet.Auto)] static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
         [DllImport("user32.dll", CharSet = CharSet.Auto)] static extern IntPtr SendMessage(IntPtr hWnd, int msg, ref int wParam, ref int lParam);
@@ -61,11 +59,10 @@ namespace StyleWatcherWin
         // Tray & config
         readonly NotifyIcon _tray = new NotifyIcon();
         readonly ContextMenuStrip _menu = new ContextMenuStrip();
-        readonly HttpClient _http = new HttpClient();
         readonly AppConfig _cfg;
 
         // Single window & throttling
-        ResultForm ?_window;
+        ResultForm? _window;
         readonly SemaphoreSlim _queryLock = new SemaphoreSlim(1, 1);
         DateTime _lastHotkeyAt = DateTime.MinValue;
 
@@ -81,8 +78,7 @@ namespace StyleWatcherWin
             WindowState = FormWindowState.Minimized;
             Visible = false;
 
-            // 托盘图标（使用 Resources\app.ico）
-            // 托盘图标：直接提取 EXE 的图标，确保与应用图标一致
+            // 托盘图标：优先取 EXE 图标；兜底 Resources/app.ico
             _tray.Text = "款式信息";
             try
             {
@@ -90,7 +86,6 @@ namespace StyleWatcherWin
                 if (exeIcon != null) _tray.Icon = exeIcon;
                 else
                 {
-                    // 兜底再尝试 Resources\app.ico
                     var icoPath = Path.Combine(AppContext.BaseDirectory, "Resources", "app.ico");
                     _tray.Icon = File.Exists(icoPath) ? new Icon(icoPath) : SystemIcons.Application;
                 }
@@ -99,8 +94,7 @@ namespace StyleWatcherWin
             {
                 _tray.Icon = SystemIcons.Application;
             }
-            _tray.Visible = true; // 确保在设置好 Icon 后再显示
-
+            _tray.Visible = true;
             _tray.DoubleClick += (s, e) => ToggleWindow(show: true);
 
             var itemToggle = new ToolStripMenuItem("显示/隐藏 窗口", null, (s, e) => ToggleWindow(toggle: true));
@@ -123,7 +117,8 @@ namespace StyleWatcherWin
             _menu.Items.Add(itemExit);
             _tray.ContextMenuStrip = _menu;
 
-            _http.Timeout = TimeSpan.FromSeconds(_cfg.timeout_seconds);
+            // 提示气泡与热键注册
+            // （原逻辑保持一致）:contentReference[oaicite:17]{index=17}
         }
 
         protected override void OnLoad(EventArgs e)
@@ -185,7 +180,7 @@ namespace StyleWatcherWin
             Application.Exit();
         }
 
-        // 选区（Win32）+ 剪贴板兜底
+        // 选区（Win32）+ 剪贴板兜底（与现有一致）:contentReference[oaicite:18]{index=18}
         private string? TryGetSelectedTextUsingWin32()
         {
             try
@@ -244,7 +239,7 @@ namespace StyleWatcherWin
             return txt;
         }
 
-        // 热键（去抖 + 限流 + 复用同窗）
+        // 热键（去抖 + 限流 + 复用同窗）:contentReference[oaicite:19]{index=19}
         private async Task OnHotkeyAsync()
         {
             var now = DateTime.UtcNow;
@@ -274,7 +269,9 @@ namespace StyleWatcherWin
                 }
 
                 _window.SetLoading("查询中...");
-                string result = await QueryAsync(txt);
+                // 统一走 ApiHelper
+                string raw = await ApiHelper.QueryAsync(_cfg, txt);
+                string result = Formatter.Prettify(raw);
                 _window.ApplyRawText(txt, result);
             }
             catch (Exception ex)
@@ -289,40 +286,6 @@ namespace StyleWatcherWin
             }
         }
 
-        private async Task<string> QueryAsync(string text)
-        {
-            try
-            {
-                var method = (_cfg.method ?? "POST").ToUpperInvariant();
-                HttpRequestMessage req;
-
-                if (method == "GET")
-                {
-                    req = new HttpRequestMessage(HttpMethod.Get, $"{_cfg.api_url}?{_cfg.json_key}={Uri.EscapeDataString(text)}");
-                }
-                else
-                {
-                    req = new HttpRequestMessage(HttpMethod.Post, _cfg.api_url);
-                    var payload = new Dictionary<string, string> { { _cfg.json_key, text } };
-                    var json = JsonSerializer.Serialize(payload);
-                    req.Content = new StringContent(json, Encoding.UTF8, "application/json");
-                }
-
-                var resp = await _http.SendAsync(req);
-                var raw = await resp.Content.ReadAsStringAsync();
-
-                try
-                {
-                    using var doc = JsonDocument.Parse(raw);
-                    if (doc.RootElement.TryGetProperty("msg", out var msgEl))
-                        return Formatter.Prettify(msgEl.ToString());
-                    return Formatter.Prettify(raw);
-                }
-                catch { return Formatter.Prettify(raw); }
-            }
-            catch (Exception ex) { return $"请求失败：{ex.Message}"; }
-        }
-
         private void ParseHotkey(string s, out uint mod, out uint vk)
         {
             mod = 0; vk = 0;
@@ -334,10 +297,13 @@ namespace StyleWatcherWin
                 if (t == "CTRL" || t == "CONTROL") mod |= MOD_CONTROL;
                 else if (t == "SHIFT") mod |= MOD_SHIFT;
                 else if (t == "ALT") mod |= MOD_ALT;
-                else if (t == "WIN" || t == "WINDOWS") mod |= MOD_WIN;
-                else if (Enum.TryParse(t, true, out Keys key)) vk = (uint)key;
+                else
+                {
+                    if (Enum.TryParse<Keys>(t, true, out var key)) vk = (uint)key;
+                }
             }
-            if (vk == 0) { mod = MOD_ALT; vk = (uint)Keys.S; }
+            if (vk == 0) vk = (uint)Keys.S;
+            if (mod == 0) mod = MOD_ALT;
         }
     }
 }

@@ -23,6 +23,9 @@ namespace StyleWatcherWin
         public static readonly Color Text       = Color.FromArgb(47,47,47);
         public static readonly Color ChipBack   = Color.FromArgb(235, 238, 244);
         public static readonly Color ChipBorder = Color.FromArgb(210, 214, 222);
+        public static readonly Color Red        = Color.FromArgb(215, 58, 73);
+        public static readonly Color Yellow     = Color.FromArgb(216, 160, 18);
+        public static readonly Color Green      = Color.FromArgb(26, 127, 55);
     }
 
     public class ResultForm : Form
@@ -153,6 +156,7 @@ namespace StyleWatcherWin
 
             var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=UI.Text,Font=UI.Body,TextAlign=ContentAlignment.MiddleLeft};
             var v=new Label{Text=value,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI", 16, FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(0,2,0,0)};
+            v.Name = "ValueLabel";
 
             inner.Controls.Add(t,0,0);
             inner.Controls.Add(v,0,1);
@@ -236,15 +240,19 @@ namespace StyleWatcherWin
             container.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
             container.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            // 顶部工具区（只保留 7/14/30）
+            // 顶部工具区：从配置读取 trendWindows
             var tools = new FlowLayoutPanel{Dock=DockStyle.Fill, FlowDirection=FlowDirection.LeftToRight, WrapContents=false, AutoScroll=true, Padding=new Padding(12,10,12,0)};
             _trendSwitch.FlowDirection=FlowDirection.LeftToRight;
             _trendSwitch.WrapContents=false;
             _trendSwitch.AutoSize=true;
             _trendSwitch.Padding=new Padding(0,0,12,0);
 
-            var wins=new int[]{7,14,30};
-            foreach(var w in wins.Distinct().OrderBy(x=>x)){
+            var wins = (_cfg.ui?.trendWindows ?? new int[]{7,14,30})
+                        .Where(x=>x>0 && x<=90).Distinct().OrderBy(x=>x).ToArray(); // 基本的容错
+            if (!wins.Contains(_trendWindow)) _trendWindow = wins.FirstOrDefault(7);
+
+            foreach(var w in wins)
+            {
                 var rb=new RadioButton{Text=$"{w} 日",AutoSize=true,Tag=w,Margin=new Padding(0,2,18,0)};
                 if(w==_trendWindow) rb.Checked=true;
                 rb.CheckedChanged+=(s,e)=>{ var me=(RadioButton)s; if(me.Checked){ _trendWindow=(int)me.Tag; if(_sales.Count>0) RenderCharts(_sales); } };
@@ -296,27 +304,33 @@ namespace StyleWatcherWin
             detail.Controls.Add(panel);
             _tabs.TabPages.Add(detail);
 
-            // 库存页
+            // 库存页（保持你原来的交互与图表）:contentReference[oaicite:21]{index=21}
             _invPage = new InventoryTabPage(_cfg);
             _invPage.SummaryUpdated += OnInventorySummary;
             _tabs.TabPages.Add(_invPage);
         }
 
-        private void SetKpiValue(Panel p,string value)
+        private static Label? ValueLabelOf(Panel p)
         {
             var table = p.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
             if (table != null)
             {
                 var labels = table.Controls.OfType<Label>().ToList();
-                if (labels.Count > 0)
-                {
-                    var val = labels.Last();
-                    val.Text = value ?? "—";
-                }
+                if (labels.Count > 0) return labels.Last();
             }
+            return null;
         }
 
-        // —— 和 TrayApp.cs 对齐的接口 —— //
+        private void SetKpiValue(Panel p,string value, Color? color = null)
+        {
+            var lbl = ValueLabelOf(p);
+            if (lbl == null) return;
+            lbl.Text = value ?? "—";
+            if (color.HasValue) lbl.ForeColor = color.Value;
+            else lbl.ForeColor = UI.Text;
+        }
+
+        // —— 与 TrayApp 对齐的接口 —— //
         public void FocusInput(){ try{ if(WindowState==FormWindowState.Minimized) WindowState=FormWindowState.Normal; _input.Focus(); _input.SelectAll(); }catch{} }
         public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.Max(0,pt.X-Width/2),Math.Max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
         public void ShowAndFocusCentered(){ ShowAndFocusCentered(_cfg.window.alwaysOnTop); }
@@ -334,7 +348,7 @@ namespace StyleWatcherWin
             if (string.IsNullOrWhiteSpace(displayText))
                 displayText = _lastDisplayText;
 
-            var parsed = Parser.Parse(displayText ?? string.Empty);
+            var parsed = Parser.Parse(displayText ?? string.Empty); // 解析结构见你的 Parser 实现:contentReference[oaicite:22]{index=22}
 
             var newGrid = parsed.Records
                 .OrderBy(r=>r.Name).ThenBy(r=>r.Color).ThenBy(r=>r.Size).ThenByDescending(r=>r.Date)
@@ -348,6 +362,7 @@ namespace StyleWatcherWin
             _sales = newSales;
             _gridMaster = newGrid;
 
+            // KPI: 近 N 天销量（固定用近 7 天）
             var sales7 = _sales.Where(x=>x.Date>=DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
             SetKpiValue(_kpiSales7, sales7.ToString());
 
@@ -364,14 +379,17 @@ namespace StyleWatcherWin
             if (_grid.Columns.Contains("日期")) _grid.Columns["日期"].DisplayIndex = 3;
             if (_grid.Columns.Contains("数量")) _grid.Columns["数量"].DisplayIndex = 4;
 
-            // 从解析结果推断 styleName，加载库存
+            // 推断 styleName，若无则使用 default_style 兜底（来自配置）:contentReference[oaicite:23]{index=23}
             var styleName = parsed.Records
                 .Select(r => r.Name)
                 .Where(n => !string.IsNullOrWhiteSpace(n))
                 .GroupBy(n => n)
                 .OrderByDescending(g => g.Count())
                 .FirstOrDefault()
-                ?.Key ?? "";
+                ?.Key;
+
+            if (string.IsNullOrWhiteSpace(styleName))
+                styleName = _cfg.inventory?.default_style ?? "";
 
             if (!string.IsNullOrWhiteSpace(styleName))
             {
@@ -387,18 +405,25 @@ namespace StyleWatcherWin
 
             SetKpiValue(_kpiInv, totalAvail.ToString());
 
-            // 库存天数：用最近7日平均销量
-            var last7 = _sales.Where(x=> x.Date >= DateTime.Today.AddDays(-6)).Sum(x=>x.Qty);
-            var avg = last7 / 7.0;
-            string days = "—";
+            // 库存天数：用最近 N 天平均销量（来自配置 inventoryAlert.minSalesWindowDays）
+            var baseDays = Math.Max(1, _cfg.inventoryAlert?.minSalesWindowDays ?? 7);
+            var lastN = _sales.Where(x=> x.Date >= DateTime.Today.AddDays(-(baseDays-1))).Sum(x=>x.Qty);
+            var avg = lastN / (double)baseDays;
+
+            string daysText = "—";
+            Color? daysColor = null;
             if (avg > 0)
             {
                 var d = Math.Round(totalAvail / avg, 1);
-                days = d.ToString("0.0");
-            }
-            SetKpiValue(_kpiDoc, days);
+                daysText = d.ToString("0.0");
 
-            // 概览页：用真实分仓占比渲染
+                var red = _cfg.inventoryAlert?.docRed ?? 3;
+                var yellow = _cfg.inventoryAlert?.docYellow ?? 7;
+                daysColor = d < red ? UI.Red : (d < yellow ? UI.Yellow : UI.Green);
+            }
+            SetKpiValue(_kpiDoc, daysText, daysColor);
+
+            // 概览页：用真实分仓占比渲染（与库存页同步）
             RenderWarehousePieOverview(_invWarehouse);
         }
 
@@ -470,17 +495,19 @@ namespace StyleWatcherWin
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
 
-            var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
-            var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
-            for(int i=0;i<series.Count;i++) maSeries.Points.Add(new DataPoint(DateTimeAxis.ToDouble(series[i].day), ma[i]));
-            modelTrend.Series.Add(maSeries);
+            if (_cfg.ui?.showMovingAverage ?? true) // 从配置控制是否显示 MA
+            {
+                var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
+                var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
+                for(int i=0;i<series.Count;i++) maSeries.Points.Add(new DataPoint(DateTimeAxis.ToDouble(series[i].day), ma[i]));
+                modelTrend.Series.Add(maSeries);
+            }
             _plotTrend.Model = modelTrend;
 
-            // 2) 尺码销量（降序，全量）
+            // 2) 尺码销量（降序）
             var sizeAgg = cleaned.GroupBy(x=>x.Size).Select(g=> new { Key=g.Key, Qty=g.Sum(z=>z.Qty)})
                                  .Where(a=>!string.IsNullOrWhiteSpace(a.Key) && a.Qty!=0)
-                                 .OrderByDescending(a=>a.Qty)
-                                 .ToList();
+                                 .OrderByDescending(a=>a.Qty).ToList();
 
             var modelSize = new PlotModel { Title = "尺码销量", PlotMargins = new OxyThickness(80,6,6,6) };
             var sizeCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4, StartPosition=1, EndPosition=0 };
@@ -492,11 +519,10 @@ namespace StyleWatcherWin
             modelSize.Series.Add(bsSize);
             _plotSize.Model = modelSize;
 
-            // 3) 颜色销量（降序，全量）
+            // 3) 颜色销量（降序）
             var colorAgg = cleaned.GroupBy(x=>x.Color).Select(g=> new { Key=g.Key, Qty=g.Sum(z=>z.Qty)})
                                   .Where(a=>!string.IsNullOrWhiteSpace(a.Key) && a.Qty!=0)
-                                  .OrderByDescending(a=>a.Qty)
-                                  .ToList();
+                                  .OrderByDescending(a=>a.Qty).ToList();
 
             var modelColor = new PlotModel { Title = "颜色销量", PlotMargins = new OxyThickness(80,6,6,6) };
             var colorCat = new CategoryAxis{ Position=AxisPosition.Left, GapWidth=0.4, StartPosition=1, EndPosition=0 };
@@ -556,14 +582,14 @@ namespace StyleWatcherWin
 
             // 趋势
             var ws2 = wb.AddWorksheet("趋势");
-            ws2.Cell(1,1).Value="日期"; ws2.Cell(1,2).Value="数量"; ws2.Cell(1,3).Value="MA7";
+            ws2.Cell(1,1).Value="日期"; ws2.Cell(1,2).Value="数量"; ws2.Cell(1,3).Value="MA7(若显示)";
             var series = Aggregations.BuildDateSeries(_sales,_trendWindow);
             var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
             int rr=2;
             for(int i=0;i<series.Count;i++){
                 ws2.Cell(rr,1).Value=series[i].day.ToString("yyyy-MM-dd");
                 ws2.Cell(rr,2).Value=series[i].qty;
-                ws2.Cell(rr,3).Value=ma[i];
+                ws2.Cell(rr,3).Value=(_cfg.ui?.showMovingAverage ?? true) ? ma[i] : 0;
                 rr++;
             }
             ws2.Columns().AdjustToContents();
@@ -571,7 +597,9 @@ namespace StyleWatcherWin
             // 口径说明
             var ws3 = wb.AddWorksheet("口径说明");
             ws3.Cell(1,1).Value="趋势窗口（天）"; ws3.Cell(1,2).Value=_trendWindow;
-            ws3.Cell(2,1).Value="是否显示MA7"; ws3.Cell(2,2).Value="是";
+            ws3.Cell(2,1).Value="是否显示MA7"; ws3.Cell(2,2).Value=(_cfg.ui?.showMovingAverage ?? true) ? "是" : "否";
+            ws3.Cell(3,1).Value="库存天数阈值"; ws3.Cell(3,2).Value=$"红<{_cfg.inventoryAlert?.docRed ?? 3}，黄<{_cfg.inventoryAlert?.docYellow ?? 7}";
+            ws3.Cell(4,1).Value="销量基线天数"; ws3.Cell(4,2).Value=_cfg.inventoryAlert?.minSalesWindowDays ?? 7;
             ws3.Columns().AdjustToContents();
 
             wb.SaveAs(path);
