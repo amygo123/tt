@@ -1,27 +1,36 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!-- Let CI pass publish flags; keep project clean -->
+
+    <!-- App icon (also copied to output in ItemGroup below) -->
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+
     <AssemblyName>StyleWatcherWin</AssemblyName>
     <RootNamespace>StyleWatcherWin</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Pin ClosedXML to avoid NU1603 resolution warning -->
-    <PackageReference Include="ClosedXML" Version="0.104.0" />
-    <!-- OxyPlot.WindowsForms pulls OxyPlot.Core; pin to a stable 2.x line -->
-    <PackageReference Include="OxyPlot.WindowsForms" Version="2.1.0" />
+    <!-- Keep config alongside exe -->
+    <Content Include="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+
+    <!-- Ensure icon is part of the build and available at runtime (for tray etc.) -->
+    <Content Include="Resources\app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Ensure appsettings.json goes next to the exe for runtime editing -->
-    <None Update="appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <!-- Pin versions for deterministic CI builds -->
+    <PackageReference Include="ClosedXML" Version="0.104.0" />
+    <PackageReference Include="OxyPlot.Core" Version="2.1.2" />
+    <PackageReference Include="OxyPlot.WindowsForms" Version="2.1.2" />
   </ItemGroup>
+
 </Project>

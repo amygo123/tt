@@ -50,8 +50,11 @@ namespace StyleWatcherWin
 
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(Math.Max(3, _cfg.timeout_seconds)) };
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                foreach (var kv in _cfg.headers)
-                    req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                // 修复：AppConfig.Headers 不是可枚举类型，不能 foreach。
+                // 如配置了 Content-Type，则作为请求头加入（可选）。
+                var ct = _cfg.headers?.Content_Type;
+                if (!string.IsNullOrWhiteSpace(ct))
+                    req.Headers.TryAddWithoutValidation("Content-Type", ct);
 
                 var resp = await http.SendAsync(req);
                 resp.EnsureSuccessStatusCode();
@@ -130,8 +133,8 @@ namespace StyleWatcherWin
             }
             catch
             {
-                raw = raw.Replace("\r\n", "\n").Replace("\r", "\n");
-                foreach (var ln in raw.Split('\n'))
+                raw = raw.Replace("\\r\\n", "\\n").Replace("\\r", "\\n");
+                foreach (var ln in raw.Split('\\n'))
                 {
                     var s = ln.Trim();
                     if (!string.IsNullOrEmpty(s)) items.Add(s);
