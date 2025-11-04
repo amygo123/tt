@@ -12,6 +12,20 @@ using System.IO;
 
 namespace StyleWatcherWin
 {
+    internal static class IconHelper
+    {
+        public static System.Drawing.Icon? LoadAppIcon()
+        {
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var p = System.IO.Path.Combine(baseDir, "Resources", "app.ico");
+                if (System.IO.File.Exists(p)) return new System.Drawing.Icon(p);
+            }
+            catch { }
+            return null;
+        }
+    }
     public static class Formatter
     {
         public static string Prettify(string raw)
@@ -59,7 +73,7 @@ namespace StyleWatcherWin
         }
 
         // Tray & config
-        readonly NotifyIcon _tray = new NotifyIcon();
+        readonly NotifyIcon _tray = new NotifyIcon(){ Visible=false };
         readonly ContextMenuStrip _menu = new ContextMenuStrip();
         readonly HttpClient _http = new HttpClient();
         readonly AppConfig _cfg;
@@ -97,7 +111,7 @@ namespace StyleWatcherWin
             }
             catch
             {
-                _tray.Icon = SystemIcons.Application;
+                _tray.Icon = IconHelper.LoadAppIcon() ?? SystemIcons.Application;
             }
             _tray.Visible = true; // 确保在设置好 Icon 后再显示
 
