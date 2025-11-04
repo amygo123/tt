@@ -37,6 +37,11 @@ namespace StyleWatcherWin
         [DllImport("user32.dll")] static extern IntPtr GetFocus();
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
         [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+
+        // ✅ 补充：AttachThreadInput 的声明（修复 CS0103）
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
         [DllImport("user32.dll", CharSet = CharSet.Auto)] static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
         [DllImport("user32.dll", CharSet = CharSet.Auto)] static extern IntPtr SendMessage(IntPtr hWnd, int msg, ref int wParam, ref int lParam);
         [DllImport("user32.dll", CharSet = CharSet.Auto)] static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, StringBuilder lParam);
@@ -78,7 +83,7 @@ namespace StyleWatcherWin
             WindowState = FormWindowState.Minimized;
             Visible = false;
 
-            // 托盘图标：优先取 EXE 图标；兜底 Resources/app.ico
+            // 托盘图标
             _tray.Text = "款式信息";
             try
             {
@@ -101,8 +106,12 @@ namespace StyleWatcherWin
             var itemQuery = new ToolStripMenuItem("手动输入查询", null, (s, e) =>
             {
                 EnsureWindow();
-                _window!.FocusInput();
-                _window!.ShowNoActivateAtCursor();
+                var w = _window;
+                if (w != null)
+                {
+                    w.FocusInput();
+                    w.ShowNoActivateAtCursor();
+                }
             });
             var itemConfig = new ToolStripMenuItem("打开配置文件", null, (s, e) =>
             {
@@ -116,9 +125,6 @@ namespace StyleWatcherWin
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(itemExit);
             _tray.ContextMenuStrip = _menu;
-
-            // 提示气泡与热键注册
-            // （原逻辑保持一致）:contentReference[oaicite:17]{index=17}
         }
 
         protected override void OnLoad(EventArgs e)
@@ -151,7 +157,7 @@ namespace StyleWatcherWin
                     if (!_allowCloseAll)
                     {
                         e.Cancel = true;
-                        _window.Hide();
+                        _window?.Hide();
                     }
                 };
             }
@@ -160,14 +166,17 @@ namespace StyleWatcherWin
         void ToggleWindow(bool show = false, bool toggle = false)
         {
             EnsureWindow();
+            var w = _window;
+            if (w == null) return;
+
             if (toggle)
             {
-                if (_window.Visible) _window.Hide();
-                else _window.ShowAndFocusCentered(_cfg.window.alwaysOnTop);
+                if (w.Visible) w.Hide();
+                else w.ShowAndFocusCentered(_cfg.window.alwaysOnTop);
             }
             else if (show)
             {
-                _window.ShowAndFocusCentered(_cfg.window.alwaysOnTop);
+                w.ShowAndFocusCentered(_cfg.window.alwaysOnTop);
             }
         }
 
@@ -180,7 +189,7 @@ namespace StyleWatcherWin
             Application.Exit();
         }
 
-        // 选区（Win32）+ 剪贴板兜底（与现有一致）:contentReference[oaicite:18]{index=18}
+        // 选区（Win32）+ 剪贴板兜底
         private string? TryGetSelectedTextUsingWin32()
         {
             try
@@ -239,7 +248,7 @@ namespace StyleWatcherWin
             return txt;
         }
 
-        // 热键（去抖 + 限流 + 复用同窗）:contentReference[oaicite:19]{index=19}
+        // 热键（去抖 + 限流 + 复用同窗）
         private async Task OnHotkeyAsync()
         {
             var now = DateTime.UtcNow;
@@ -260,24 +269,28 @@ namespace StyleWatcherWin
                 if (string.IsNullOrEmpty(txt)) txt = await GetSelectionByClipboardRoundTripAsync();
 
                 EnsureWindow();
-                _window.ShowAndFocusCentered(_cfg.window.alwaysOnTop);
+                var w = _window;
+                if (w == null) return;
+
+                w.ShowAndFocusCentered(_cfg.window.alwaysOnTop);
 
                 if (string.IsNullOrEmpty(txt))
                 {
-                    _window.SetLoading("未检测到选中文本，请先选中一段文字再按热键。");
+                    w.SetLoading("未检测到选中文本，请先选中一段文字再按热键。");
                     return;
                 }
 
-                _window.SetLoading("查询中...");
+                w.SetLoading("查询中...");
                 // 统一走 ApiHelper
                 string raw = await ApiHelper.QueryAsync(_cfg, txt);
                 string result = Formatter.Prettify(raw);
-                _window.ApplyRawText(txt, result);
+                w.ApplyRawText(txt, result);
             }
             catch (Exception ex)
             {
                 EnsureWindow();
-                _window.SetLoading($"错误：{ex.Message}");
+                var w = _window;
+                if (w != null) w.SetLoading($"错误：{ex.Message}");
             }
             finally
             {
