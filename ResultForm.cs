@@ -122,7 +122,7 @@ namespace StyleWatcherWin
 
         private Control BuildHeader()
         {
-            var head = new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,RowCount=1,Padding=new(12,10,12,6),BackColor=UI.HeaderBack};
+            var head = new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,RowCount=1,Padding=new(12,10,12,6),BackColor=Color.FromArgb(245,247,250)};
             head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
             head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -147,14 +147,14 @@ namespace StyleWatcherWin
         private Control MakeKpi(Panel host,string title,string value)
         {
             host.Width=260; host.Height=110; host.Padding=new Padding(10);
-            host.BackColor=UI.CardBack; host.BorderStyle=BorderStyle.FixedSingle;
+            host.BackColor=Color.FromArgb(250,250,250); host.BorderStyle=BorderStyle.FixedSingle;
             host.Margin = new Padding(8,4,8,4);
 
             var inner = new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2};
             inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=UI.Text,Font=UI.Body,TextAlign=ContentAlignment.MiddleLeft};
+            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=Color.FromArgb(47,47,47),Font=new Font("Microsoft YaHei UI", 10),TextAlign=ContentAlignment.MiddleLeft};
             var v=new Label{Text=value,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI", 16, FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(0,2,0,0)};
             v.Name = "ValueLabel";
 
@@ -168,14 +168,14 @@ namespace StyleWatcherWin
         private Control MakeKpiMissing(Panel host, string title)
         {
             host.Width=260; host.Height=110; host.Padding=new Padding(10);
-            host.BackColor=UI.CardBack; host.BorderStyle=BorderStyle.FixedSingle;
+            host.BackColor=Color.FromArgb(250,250,250); host.BorderStyle=BorderStyle.FixedSingle;
             host.Margin = new Padding(8,4,8,4);
 
             var inner = new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2};
             inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=UI.Text,Font=UI.Body,TextAlign=ContentAlignment.MiddleLeft};
+            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=Color.FromArgb(47,47,47),Font=new Font("Microsoft YaHei UI", 10),TextAlign=ContentAlignment.MiddleLeft};
 
             var flow = new FlowLayoutPanel{
                 Dock = DockStyle.Fill,
@@ -207,8 +207,8 @@ namespace StyleWatcherWin
                     AutoSize = true,
                     Text = s,
                     Font = new Font("Microsoft YaHei UI", 8.5f, FontStyle.Regular),
-                    BackColor = UI.ChipBack,
-                    ForeColor = UI.Text,
+                    BackColor = Color.FromArgb(235, 238, 244),
+                    ForeColor = Color.FromArgb(47,47,47),
                     Padding = new Padding(6, 2, 6, 2),
                     Margin = new Padding(4, 2, 0, 2),
                     BorderStyle = BorderStyle.FixedSingle
@@ -223,7 +223,7 @@ namespace StyleWatcherWin
                     AutoSize = true,
                     Text = "无",
                     Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular),
-                    ForeColor = UI.Text
+                    ForeColor = Color.FromArgb(47,47,47)
                 };
                 _kpiMissingFlow.Controls.Add(none);
             }
@@ -304,7 +304,7 @@ namespace StyleWatcherWin
             detail.Controls.Add(panel);
             _tabs.TabPages.Add(detail);
 
-            // 库存页（保持你原来的交互与图表）:contentReference[oaicite:21]{index=21}
+            // 库存页
             _invPage = new InventoryTabPage(_cfg);
             _invPage.SummaryUpdated += OnInventorySummary;
             _tabs.TabPages.Add(_invPage);
@@ -327,12 +327,12 @@ namespace StyleWatcherWin
             if (lbl == null) return;
             lbl.Text = value ?? "—";
             if (color.HasValue) lbl.ForeColor = color.Value;
-            else lbl.ForeColor = UI.Text;
+            else lbl.ForeColor = Color.FromArgb(47,47,47);
         }
 
         // —— 与 TrayApp 对齐的接口 —— //
         public void FocusInput(){ try{ if(WindowState==FormWindowState.Minimized) WindowState=FormWindowState.Normal; _input.Focus(); _input.SelectAll(); }catch{} }
-        public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.Max(0,pt.X-Width/2),Math.Max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
+        public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.max(0,pt.X-Width/2),Math.max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
         public void ShowAndFocusCentered(){ ShowAndFocusCentered(_cfg.window.alwaysOnTop); }
         public void ShowAndFocusCentered(bool alwaysOnTop){ TopMost=alwaysOnTop; StartPosition=FormStartPosition.CenterScreen; Show(); Activate(); FocusInput(); }
         public void SetLoading(string message){ SetKpiValue(_kpiSales7,"—"); SetKpiValue(_kpiInv,"—"); SetKpiValue(_kpiDoc,"—"); SetKpiValue(_kpiMissing,"—"); }
@@ -348,7 +348,7 @@ namespace StyleWatcherWin
             if (string.IsNullOrWhiteSpace(displayText))
                 displayText = _lastDisplayText;
 
-            var parsed = Parser.Parse(displayText ?? string.Empty); // 解析结构见你的 Parser 实现:contentReference[oaicite:22]{index=22}
+            var parsed = Parser.Parse(displayText ?? string.Empty);
 
             var newGrid = parsed.Records
                 .OrderBy(r=>r.Name).ThenBy(r=>r.Color).ThenBy(r=>r.Size).ThenByDescending(r=>r.Date)
@@ -379,7 +379,7 @@ namespace StyleWatcherWin
             if (_grid.Columns.Contains("日期")) _grid.Columns["日期"].DisplayIndex = 3;
             if (_grid.Columns.Contains("数量")) _grid.Columns["数量"].DisplayIndex = 4;
 
-            // 推断 styleName，若无则使用 default_style 兜底（来自配置）:contentReference[oaicite:23]{index=23}
+            // 推断 styleName，若无则使用 default_style 兜底
             var styleName = parsed.Records
                 .Select(r => r.Name)
                 .Where(n => !string.IsNullOrWhiteSpace(n))
@@ -411,7 +411,7 @@ namespace StyleWatcherWin
             var avg = lastN / (double)baseDays;
 
             string daysText = "—";
-            Color? daysColor = null;
+            System.Drawing.Color? daysColor = null;
             if (avg > 0)
             {
                 var d = Math.Round(totalAvail / avg, 1);
@@ -419,11 +419,11 @@ namespace StyleWatcherWin
 
                 var red = _cfg.inventoryAlert?.docRed ?? 3;
                 var yellow = _cfg.inventoryAlert?.docYellow ?? 7;
-                daysColor = d < red ? UI.Red : (d < yellow ? UI.Yellow : UI.Green);
+                daysColor = d < red ? Color.FromArgb(215, 58, 73) : (d < yellow ? Color.FromArgb(216, 160, 18) : Color.FromArgb(26, 127, 55));
             }
             SetKpiValue(_kpiDoc, daysText, daysColor);
 
-            // 概览页：用真实分仓占比渲染（与库存页同步）
+            // 概览页：分仓占比
             RenderWarehousePieOverview(_invWarehouse);
         }
 
@@ -495,7 +495,7 @@ namespace StyleWatcherWin
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
 
-            if (_cfg.ui?.showMovingAverage ?? true) // 从配置控制是否显示 MA
+            if (_cfg.ui?.showMovingAverage ?? true)
             {
                 var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
                 var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
