@@ -44,15 +44,14 @@ namespace StyleWatcherWin
 
         public class InventoryCfg
         {
-            public string url_base { get; set; } 
+            public string url_base { get; set; } = "http://192.168.40.97:8000/inventory?style_name=";
+            public string default_style { get; set; } = "纯色/通纯棉圆领短T/黑/XL";
+        }
 
         public class LookupCfg
         {
             // 通过款式查询定级/最低价/保本价
             public string url_base { get; set; } = "http://192.168.40.97:8002/lookup?name=";
-        }
-= "http://192.168.40.97:8000/inventory?style_name=";
-            public string default_style { get; set; } = "纯色/通纯棉圆领短T/黑/XL";
         }
 
         public class UiCfg
