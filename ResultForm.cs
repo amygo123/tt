@@ -464,11 +464,11 @@ namespace StyleWatcherWin
                 foreach (var kv in list)
                 {
                     if (keepSet.Contains(kv.Key))
-                        pie.Slices.Add(new PieSlice(kv.Key, kv.Value));
+                        pie.Slices.Add(new PieSlice(kv.Key, kv.Value) { Tag = kv.Key });
                     else
                         other += kv.Value;
                 }
-                if (other > 0) pie.Slices.Add(new PieSlice("其他", other));
+                if (other > 0) pie.Slices.Add(new PieSlice("其他", other) { Tag = "其他" });
             }
 
             model.Series.Add(pie);
@@ -634,7 +634,7 @@ namespace StyleWatcherWin
                 var hit = pie.GetNearestPoint(new OxyPlot.ScreenPoint(e.Location.X, e.Location.Y), false);
                 if (hit?.Item is OxyPlot.Series.PieSlice slice)
                 {
-                    var name = slice.Label ?? string.Empty;
+                    var name = (slice.Tag as string) ?? slice.Label ?? string.Empty;
                     if (string.IsNullOrWhiteSpace(name)) return;
                     if (name == "其他" || name == "无数据") return;
 
