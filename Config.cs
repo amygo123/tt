@@ -41,20 +41,21 @@ namespace StyleWatcherWin
             public string Content_Type { get; set; } = "application/json";
         }
 
+        
         public class InventoryCfg
         {
-            public string url_base { get; set; } 
+            public string url_base { get; set; } = "http://192.168.40.97:8000/inventory?style_name=";
+            public string default_style { get; set; } = "纯色/通纯棉圆领短T/黑/XL";
+        }
 
         public class LookupCfg
         {
             // 通过款名查询定级/最低价/保本价
             public string url_base { get; set; } = "http://192.168.40.97:8002/lookup?name=";
         }
-= "http://192.168.40.97:8000/inventory?style_name=";
-            public string default_style { get; set; } = "纯色/通纯棉圆领短T/黑/XL";
-        }
 
         public class UiCfg
+public class UiCfg
         {
             public int[] trendWindows { get; set; } = new[] { 7, 14, 30 };
             public bool showMovingAverage { get; set; } = true;
@@ -177,3 +178,6 @@ namespace StyleWatcherWin
                 return $"[] // 请求失败：{ex.Message}";
             }
         }
+
+}
+}

@@ -344,7 +344,7 @@ namespace StyleWatcherWin
         public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.Max(0,pt.X-Width/2),Math.Max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
         public void ShowAndFocusCentered(){ ShowAndFocusCentered(_cfg.window.alwaysOnTop); }
         public void ShowAndFocusCentered(bool alwaysOnTop){ TopMost=alwaysOnTop; StartPosition=FormStartPosition.CenterScreen; Show(); Activate(); FocusInput(); }
-        public void SetLoading(string message){ SetKpiValue(_kpiSales7,"—"); SetKpiValue(_kpiInv,"—"); SetKpiValue(_kpiDoc,\"—\"); SetKpiValue(_kpiMissing,\"—\"); SetKpiValue(_kpiGrade,\"—\"); SetKpiValue(_kpiMinPrice,\"—\"); SetKpiValue(_kpiBreakeven,\"—\"); }
+        public void SetLoading(string message){ try{ SetKpiValue(_kpiSales7, "—"); SetKpiValue(_kpiInv, "—"); SetKpiValue(_kpiDoc, "—"); SetKpiValue(_kpiMissing, "—"); SetKpiValue(_kpiGrade, "—"); SetKpiValue(_kpiMinPrice, "—"); SetKpiValue(_kpiBreakeven, "—"); } catch {} }
         public async void ApplyRawText(string selection, string parsed){ _input.Text=selection??string.Empty; _lastDisplayText = parsed ?? string.Empty; await LoadTextAsync(parsed??string.Empty); }
         public void ApplyRawText(string text){ _input.Text=text??string.Empty; }
 
@@ -640,7 +640,7 @@ if (other > 0)
         {
             try
             {
-                var raw = await Config.QueryLookupAsync(_cfg, styleName);
+                var raw = await ApiHelper.QueryLookupAsync(_cfg, styleName);
                 // 可能返回注释，去掉尾部注释
                 var json = raw.Split(new[] {"//"}, StringSplitOptions.None)[0].Trim();
                 if (string.IsNullOrWhiteSpace(json)) { SetKpiValue(_kpiGrade,"—"); SetKpiValue(_kpiMinPrice,"—"); SetKpiValue(_kpiBreakeven,"—"); return; }
