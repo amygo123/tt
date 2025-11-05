@@ -219,7 +219,11 @@ namespace StyleWatcherWin
             {
                 var (x, y) = kv.Key;
                 var val = kv.Value;
-                rects.Items.Add(new RectangleBarItem(x - 0.5, y - 0.5, x + 0.5, y + 0.5, val));
+                var item = new RectangleBarItem(x - 0.5, y - 0.5, x + 0.5, y + 0.5);
+                // 简易颜色映射：按可用值深浅
+                var norm = val <= 0 ? 0 : 1;
+                item.Color = OxyColor.FromAColor(200, OxyColors.Orange);
+                rects.Items.Add(item);
             }
             model.Series.Add(rects);
 
