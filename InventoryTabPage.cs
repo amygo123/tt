@@ -338,24 +338,32 @@ namespace StyleWatcherWin
 
             var model = new PlotModel { Title = title };
 
-            // 统计分布：用 95 分位作为色轴上限，增强对比；并保留所有数据（>P95 的显示为同一深色）
+            // 统计分布
             var vals = new List<double>();
             foreach (var v in data) if (v > 0) vals.Add(v);
             vals.Sort();
-            var p95 = Percentile(vals, 0.95);
-            var max = vals.Count > 0 ? vals.Last() : 1.0;
-            if (p95 <= 0) p95 = max;
+            var minPos = vals.Count > 0 ? vals.First() : 1.0;
+            var p95 = vals.Count > 0 ? Percentile(vals, 0.95) : 1.0;
+            if (p95 <= 0) p95 = minPos;
 
-            // 更直观的配色：Viridis，低值接近浅黄绿，高值深蓝紫；零值显示为极浅灰
-            var palette = OxyPalettes.Viridis(256);
+            // 自定义更直观的配色：浅 -> 绿 -> 橙 -> 红
+            var palette = OxyPalette.FromColors(
+                OxyColor.FromRgb(229, 245, 224), // very light
+                OxyColor.FromRgb(161, 217, 155), // green
+                OxyColor.FromRgb(255, 224, 102), // yellow-ish
+                OxyColor.FromRgb(253, 174, 97),  // orange
+                OxyColor.FromRgb(244, 109, 67),  // orange-red
+                OxyColor.FromRgb(215, 48, 39)    // red
+            );
+
             var caxis = new LinearColorAxis
             {
                 Position = AxisPosition.Right,
                 Palette = palette,
-                Minimum = 0,
-                Maximum = p95,
-                LowColor = OxyColor.FromRgb(245, 245, 245), // 近似表示 0
-                HighColor = OxyColor.FromRgb(68, 1, 84)     // 最高端（与 Viridis 顶端接近）
+                Minimum = minPos,                           // 低于最小正值的（包括 0）走 LowColor
+                Maximum = p95,                              // 高于 P95 的走 HighColor
+                LowColor = OxyColor.FromRgb(242, 242, 242), // 0 值显示很浅灰
+                HighColor = OxyColor.FromRgb(153, 0, 0)     // 极高值深红
             };
             model.Axes.Add(caxis);
 
@@ -414,6 +422,21 @@ namespace StyleWatcherWin
             BindPanZoom(pv);
         }
         #endregion
+
+        // 供外部调用：切换到指定仓库子页
+        public void ActivateWarehouse(string warehouse)
+        {
+            if (string.IsNullOrWhiteSpace(warehouse)) return;
+            foreach (TabPage tp in _subTabs.TabPages)
+            {
+                var name = tp.Text.Split('（')[0]; // "仓库名（xxx）"
+                if (string.Equals(name, warehouse, StringComparison.OrdinalIgnoreCase))
+                {
+                    _subTabs.SelectedTab = tp;
+                    return;
+                }
+            }
+        }
 
         private void RenderWarehouseTabs(InvSnapshot snap)
         {

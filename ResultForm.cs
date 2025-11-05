@@ -473,6 +473,7 @@ namespace StyleWatcherWin
 
             model.Series.Add(pie);
             _plotWarehouse.Model = model;
+            HookWarehousePieNavigation();
         }
 
         private static IEnumerable<string> MissingSizes(IEnumerable<string> sizes)
