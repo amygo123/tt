@@ -30,6 +30,9 @@ namespace StyleWatcherWin
 
     public class ResultForm : Form
     {
+        // 映射饼图切片 -> 仓库名（OxyPlot 2.1.0 的 PieSlice 无 Tag 属性）
+        private readonly System.Collections.Generic.Dictionary<OxyPlot.Series.PieSlice, string> _warehouseSliceMap = new System.Collections.Generic.Dictionary<OxyPlot.Series.PieSlice, string>();
+
         private readonly AppConfig _cfg;
 
         // Header
