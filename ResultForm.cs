@@ -443,7 +443,7 @@ namespace StyleWatcherWin
         private void RenderWarehousePieOverview(Dictionary<string,int> warehouseAgg)
         {
             var model = new PlotModel { Title = "分仓库存占比" };
-            var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6, InsideLabelFormat = "{1:0}%" };
+            var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6, InsideLabelFormat = "{0}" };
 
             var list = warehouseAgg.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && kv.Value > 0)
                                    .OrderByDescending(kv => kv.Value).ToList();
@@ -510,7 +510,7 @@ namespace StyleWatcherWin
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
 
-            if (_cfg.ui?.showMovingAverage ?? true)
+            if (false) // disabled MA7 on overview
             {
                 var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
                 var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
