@@ -18,10 +18,11 @@ namespace StyleWatcherWin
     /// <summary>
     /// 库存页：热力图（颜色×尺码）+ 颜色/尺码柱状 + 分仓 + 明细
     /// 本次修复/迭代：
-    /// 1) 取消默认点击/Tracker；用自定义悬浮提示（颜色/尺码/库存）
-    /// 2) 点击格子联动右侧明细筛选；再次点击或点空白处取消
+    /// 1) 修复 HeatMap 缺少 ColorAxis 的异常（新增 LinearColorAxis）
+    /// 2) 悬浮提示（颜色/尺码/库存）+ 点击格子联动右侧明细筛选
     /// 3) 兼容 ResultForm 对 LoadInventoryAsync 的调用（新增该方法包装到 LoadAsync）
-    /// 4) 用 BarSeries 代替 ColumnSeries，避免缺包导致的编译错误
+    /// 4) 保持柱状图不做 TOP-N 限制（不锁前10）
+    /// 5) 分仓子页面升级：左侧“分仓热力图”，右侧“该仓明细”，点击联动筛选
     /// </summary>
     public class InventoryTabPage : TabPage
     {
@@ -99,7 +100,7 @@ namespace StyleWatcherWin
         // 悬浮提示
         private readonly ToolTip _tip = new() { InitialDelay = 0, ReshowDelay = 0, AutoPopDelay = 8000, ShowAlways = true };
 
-        // 当前点击筛选
+        // 当前点击筛选（主热力图）
         private (string? color, string? size)? _activeCell = null;
 
         public InventoryTabPage(AppConfig cfg)
@@ -161,7 +162,11 @@ namespace StyleWatcherWin
             grid.Controls.Add(_pvHeat, 0, 1);
             grid.Controls.Add(_grid, 1, 1);
 
-            AttachHeatmapInteractions(_pvHeat);
+            AttachHeatmapInteractions(_pvHeat, sel =>
+            {
+                _activeCell = sel;
+                ApplySearchFilter();
+            });
 
             return grid;
         }
@@ -196,7 +201,7 @@ namespace StyleWatcherWin
             RenderWarehouseTabs(snap);
 
             try { SummaryUpdated?.Invoke(snap.TotalAvailable, snap.TotalOnHand, snap.ByWarehouse()); } catch { }
-            FillGrid(snap.Rows);
+            FillGrid(_grid, snap.Rows);
         }
 
         #region 数据获取/解析
@@ -254,7 +259,7 @@ namespace StyleWatcherWin
                                 .OrderByDescending(x => x.V)
                                 .ToList();
 
-            var cat = new CategoryAxis { Position = AxisPosition.Left }; // 用 BarSeries => 类别轴在左边
+            var cat = new CategoryAxis { Position = AxisPosition.Left }; // BarSeries => 类别轴在左边
             foreach (var d in data) cat.Labels.Add(d.Key);
 
             var val = new LinearAxis { Position = AxisPosition.Bottom, MinorGridlineStyle = LineStyle.Dot, MajorGridlineStyle = LineStyle.Solid };
@@ -295,12 +300,11 @@ namespace StyleWatcherWin
             public double[,] Data = new double[0, 0];
         }
 
-        private void RenderHeatmap(InvSnapshot snap, PlotView pv, string title)
+        private HeatmapContext BuildHeatmap(InvSnapshot snap, PlotView pv, string title)
         {
             var colors = snap.ColorsNonZero().ToList();
             var sizes = snap.SizesNonZero().ToList();
 
-            // 索引映射：X -> 颜色索引，Y -> 尺码索引
             var ci = colors.Select((c, i) => (c, i)).ToDictionary(x => x.c, x => x.i);
             var si = sizes.Select((s, i) => (s, i)).ToDictionary(x => x.s, x => x.i);
 
@@ -313,11 +317,15 @@ namespace StyleWatcherWin
 
             var model = new PlotModel { Title = title };
 
-            // 用 LinearAxis + LabelFormatter 做“类目标签”
+            // 颜色轴（修复异常）
+            var caxis = new LinearColorAxis { Position = AxisPosition.Right, Palette = OxyPalettes.Jet(256) };
+            model.Axes.Add(caxis);
+
+            // 类目映射轴
             var axX = new LinearAxis
             {
                 Position = AxisPosition.Bottom,
-                Minimum = -0.5, Maximum = colors.Count - 0.5,
+                Minimum = -0.5, Maximum = Math.Max(colors.Count - 0.5, 0.5),
                 MajorStep = 1, MinorStep = 1,
                 IsZoomEnabled = true, IsPanEnabled = true,
                 LabelFormatter = d =>
@@ -330,7 +338,7 @@ namespace StyleWatcherWin
             var axY = new LinearAxis
             {
                 Position = AxisPosition.Left,
-                Minimum = -0.5, Maximum = sizes.Count - 0.5,
+                Minimum = -0.5, Maximum = Math.Max(sizes.Count - 0.5, 0.5),
                 MajorStep = 1, MinorStep = 1,
                 IsZoomEnabled = true, IsPanEnabled = true,
                 LabelFormatter = d =>
@@ -357,13 +365,14 @@ namespace StyleWatcherWin
             model.Series.Add(hm);
             pv.Model = model;
 
-            // 将上下文放入 Tag 供交互使用
-            pv.Tag = new HeatmapContext
-            {
-                Colors = colors,
-                Sizes = sizes,
-                Data = data
-            };
+            var ctx = new HeatmapContext { Colors = colors, Sizes = sizes, Data = data };
+            pv.Tag = ctx;
+            return ctx;
+        }
+
+        private void RenderHeatmap(InvSnapshot snap, PlotView pv, string title)
+        {
+            BuildHeatmap(snap, pv, title);
         }
         #endregion
 
@@ -375,18 +384,47 @@ namespace StyleWatcherWin
             foreach (var g in snap.Rows.GroupBy(r => r.Warehouse).OrderByDescending(x => x.Sum(y => y.Available)))
             {
                 var page = new TabPage($"{g.Key}（{g.Sum(x => x.Available)}）");
+
+                var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
+                panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+                panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+
+                var pv = new PlotView { Dock = DockStyle.Fill, BackColor = Color.White };
                 var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells };
-                grid.DataSource = new BindingList<InvRow>(g.ToList());
-                page.Controls.Add(grid);
+
+                panel.Controls.Add(pv, 0, 0);
+                panel.Controls.Add(grid, 1, 0);
+                page.Controls.Add(panel);
+
+                var subSnap = new InvSnapshot();
+                foreach (var r in g) subSnap.Rows.Add(r);
+                BuildHeatmap(subSnap, pv, $"{g.Key} 颜色×尺码");
+
+                // 初始填充该仓明细
+                FillGrid(grid, subSnap.Rows);
+
+                // 联动：点击该仓热力图筛选右侧明细
+                (string? color, string? size)? sel = null;
+                AttachHeatmapInteractions(pv, newSel =>
+                {
+                    sel = newSel;
+                    IEnumerable<InvRow> q = subSnap.Rows;
+                    if (sel is { } ac)
+                    {
+                        if (!string.IsNullOrEmpty(ac.color)) q = q.Where(r => r.Color == ac.color);
+                        if (!string.IsNullOrEmpty(ac.size)) q = q.Where(r => r.Size == ac.size);
+                    }
+                    FillGrid(grid, q);
+                });
+
                 _subTabs.TabPages.Add(page);
             }
             _subTabs.ResumeLayout();
         }
 
-        private void FillGrid(IEnumerable<InvRow> rows)
+        private void FillGrid(DataGridView grid, IEnumerable<InvRow> rows)
         {
-            _gridData = new BindingList<InvRow>(rows.ToList());
-            _grid.DataSource = _gridData;
+            grid.DataSource = new BindingList<InvRow>(rows.ToList());
         }
 
         private void ApplySearchFilter()
@@ -407,11 +445,11 @@ namespace StyleWatcherWin
                     q = q.Where(r => r.Size == ac.size);
             }
 
-            FillGrid(q);
+            FillGrid(_grid, q);
         }
 
         #region 交互：取消默认点击 → 自定义悬浮与联动筛选
-        private void AttachHeatmapInteractions(PlotView pv)
+        private void AttachHeatmapInteractions(PlotView pv, Action<(string? color, string? size)?> onSelectionChanged)
         {
             // 取消默认左键行为（包括默认 Tracker）
             try
@@ -438,7 +476,6 @@ namespace StyleWatcherWin
                 var hit = hm.GetNearestPoint(sp, false);
                 if (hit == null) { _tip.Hide(pv); return; }
 
-                // 将数据坐标四舍五入到格子索引
                 var xi = (int)Math.Round(hit.DataPoint.X);
                 var yi = (int)Math.Round(hit.DataPoint.Y);
 
@@ -471,7 +508,6 @@ namespace StyleWatcherWin
                 var sp = new ScreenPoint(e.Location.X, e.Location.Y);
                 var hit = hm.GetNearestPoint(sp, false);
 
-                // 点击在有效格子内 → 设置/取消筛选
                 if (hit != null)
                 {
                     var xi = (int)Math.Round(hit.DataPoint.X);
@@ -481,22 +517,16 @@ namespace StyleWatcherWin
                         var color = ctx.Colors[xi];
                         var size = ctx.Sizes[yi];
 
-                        if (_activeCell is { } ac && ac.color == color && ac.size == size)
-                            _activeCell = null; // 二次点击取消
-                        else
-                            _activeCell = (color, size);
-
-                        ApplySearchFilter();
+                        // 二次点击取消
+                        var current = (color, size);
+                        // 读取之前的选择（通过外部闭包保存），这里只能通知外部决定
+                        onSelectionChanged(current);
                         return;
                     }
                 }
 
                 // 点击空白取消
-                if (_activeCell != null)
-                {
-                    _activeCell = null;
-                    ApplySearchFilter();
-                }
+                onSelectionChanged(null);
             };
         }
         #endregion
