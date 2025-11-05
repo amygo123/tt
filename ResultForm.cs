@@ -621,4 +621,40 @@ namespace StyleWatcherWin
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
         }
     }
+
+        // 概览页“分仓库存占比”饼图：点击后跳转库存并定位仓库
+        private void OnWarehousePieMouseUp(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            try
+            {
+                var model = _plotWarehouse?.Model;
+                if (model == null) return;
+                var pie = model.Series.OfType<OxyPlot.Series.PieSeries>().FirstOrDefault();
+                if (pie == null) return;
+
+                var hit = pie.GetNearestPoint(new OxyPlot.ScreenPoint(e.Location.X, e.Location.Y), false);
+                if (hit?.Item is OxyPlot.Series.PieSlice slice)
+                {
+                    var name = slice.Label ?? slice.Text ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(name)) return;
+                    if (name == "其他" || name == "无数据") return;
+
+                    // 切换到库存页 Tab
+                    try
+                    {
+                        var invTab = _invPage?.Parent as TabPage;
+                        var tabs = invTab?.Parent as TabControl;
+                        if (invTab != null && tabs != null)
+                            tabs.SelectedTab = invTab;
+                    }
+                    catch { /* ignore */ }
+
+                    // 激活对应仓库子页
+                    try { _invPage?.ActivateWarehouse(name); } catch { }
+                }
+            }
+            catch { /* ignore */ }
+        }
+    
 }
