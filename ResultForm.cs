@@ -241,7 +241,7 @@ namespace StyleWatcherWin
             container.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             // 顶部工具区：从配置读取 trendWindows
-            var tools = new FlowLayoutPanel{Dock=DockStyle.Fill, FlowDirection=FlowDirection.LeftToRight, WrapContents=false, AutoScroll=true, Padding=new Padding(12,10,12,0)};
+            var tools = new FlowLayoutPanel{Dock=DockStyle.Fill, AutoSize=true, WrapContents=false, AutoScroll=true, Padding=new Padding(12,10,12,0)};
             _trendSwitch.FlowDirection=FlowDirection.LeftToRight;
             _trendSwitch.WrapContents=false;
             _trendSwitch.AutoSize=true;
@@ -255,8 +255,8 @@ namespace StyleWatcherWin
             {
                 var rb=new RadioButton{Text=$"{w} 日",AutoSize=true,Tag=w,Margin=new Padding(0,2,18,0)};
                 if(w==_trendWindow) rb.Checked=true;
-                rb.CheckedChanged += (s, e) => { var rbCtrl = s as RadioButton; if (rbCtrl == null || !rbCtrl.Checked) return; if (rbCtrl.Tag is int w2) { _trendWindow = w2; if (_sales != null && _sales.Count > 0) RenderCharts(_sales); } }; if(me.Checked){ _trendWindow=(int)me.Tag; if(_sales.Count>0) RenderCharts(_sales); } };
-                _trendSwitch.Controls.Add(rb);
+                if(w==_trendWindow) rb.Checked=true;
+                rb.CheckedChanged += (s, e) => { var rbCtrl = s as RadioButton; if (rbCtrl == null || !rbCtrl.Checked) return; if (rbCtrl.Tag is int w2) { _trendWindow = w2; if (_sales != null && _sales.Count > 0) RenderCharts(_sales); } };
             }
             tools.Controls.Add(_trendSwitch);
 
