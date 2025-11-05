@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ClosedXML.Excel;
@@ -408,7 +409,55 @@ namespace StyleWatcherWin
             }
         }
 
-        private void OnInventorySummary(int totalAvail, int totalOnHand, Dictionary<string,int> warehouseAgg)
+        
+        private class LookupItem
+        {
+            public string style_name { get; set; }
+            public string grade { get; set; }
+            public double? min_price_one { get; set; }
+            public double? breakeven_one { get; set; }
+        }
+
+        private async System.Threading.Tasks.Task LoadLookupAsync(string styleName)
+        {
+            try
+            {
+                var raw = await ApiHelper.QueryLookupAsync(_cfg, styleName);
+                var json = raw.Split(new[] {"//"}, StringSplitOptions.None)[0].Trim();
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    SetKpiValue(_kpiGrade,"—");
+                    SetKpiValue(_kpiMinPrice,"—");
+                    SetKpiValue(_kpiBreakeven,"—");
+                    return;
+                }
+                var items = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<LookupItem>>(json, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                }) ?? new System.Collections.Generic.List<LookupItem>();
+
+                var it = items.FirstOrDefault();
+                if (it == null)
+                {
+                    SetKpiValue(_kpiGrade,"—");
+                    SetKpiValue(_kpiMinPrice,"—");
+                    SetKpiValue(_kpiBreakeven,"—");
+                    return;
+                }
+
+                SetKpiValue(_kpiGrade, string.IsNullOrWhiteSpace(it.grade) ? "—" : it.grade);
+                SetKpiValue(_kpiMinPrice, it.min_price_one.HasValue ? it.min_price_one.Value.ToString("0.##") : "—");
+                SetKpiValue(_kpiBreakeven, it.breakeven_one.HasValue ? it.breakeven_one.Value.ToString("0.##") : "—");
+            }
+            catch
+            {
+                SetKpiValue(_kpiGrade,"—");
+                SetKpiValue(_kpiMinPrice,"—");
+                SetKpiValue(_kpiBreakeven,"—");
+            }
+        }
+
+private void OnInventorySummary(int totalAvail, int totalOnHand, Dictionary<string,int> warehouseAgg)
         {
             _invAvailTotal = totalAvail;
             _invOnHandTotal = totalOnHand;
