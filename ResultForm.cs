@@ -89,19 +89,6 @@ namespace StyleWatcherWin
             BackColor = Color.White;
             KeyPreview = true;
             KeyDown += (s,e)=>{ if(e.KeyCode==Keys.Escape) Hide(); };
-            // 设置窗口图标：优先 EXE 内置图标，其次 Resources\app.ico
-            try
-            {
-                var exeIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-                if (exeIcon != null) this.Icon = exeIcon;
-                else
-                {
-                    var icoPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Resources", "app.ico");
-                    if (System.IO.File.Exists(icoPath)) this.Icon = new Icon(icoPath);
-                }
-            }
-            catch { /* ignore */ }
-
 
             var root = new TableLayoutPanel{Dock=DockStyle.Fill,RowCount=2,ColumnCount=1};
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
@@ -268,7 +255,7 @@ namespace StyleWatcherWin
             {
                 var rb=new RadioButton{Text=$"{w} 日",AutoSize=true,Tag=w,Margin=new Padding(0,2,18,0)};
                 if(w==_trendWindow) rb.Checked=true;
-                rb.CheckedChanged += (s, e) => { var rbCtrl = s as RadioButton; if (rbCtrl == null || !rbCtrl.Checked) return; if (rbCtrl.Tag is int w2) { _trendWindow = w2; if (_sales != null && _sales.Count > 0) RenderCharts(_sales); } };
+                rb.CheckedChanged+=(s,e)=>{ var me=(RadioButton)s; if(me.Checked){ _trendWindow=(int)me.Tag; if(_sales.Count>0) RenderCharts(_sales); } };
                 _trendSwitch.Controls.Add(rb);
             }
             tools.Controls.Add(_trendSwitch);
@@ -442,8 +429,10 @@ namespace StyleWatcherWin
 
         private void RenderWarehousePieOverview(Dictionary<string,int> warehouseAgg)
         {
+            _warehouseSliceMap.Clear();
+
             var model = new PlotModel { Title = "分仓库存占比" };
-            var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6, InsideLabelFormat = "{0}" };
+            var pie = new PieSeries { AngleSpan = 360, StartAngle = 0, StrokeThickness = 0.5, InsideLabelPosition = 0.6, InsideLabelFormat = "{1:0}%" };
 
             var list = warehouseAgg.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && kv.Value > 0)
                                    .OrderByDescending(kv => kv.Value).ToList();
@@ -464,17 +453,15 @@ namespace StyleWatcherWin
                 foreach (var kv in list)
                 {
                     if (keepSet.Contains(kv.Key))
-                        pie.Slices.Add(new PieSlice(kv.Key, kv.Value) { Tag = kv.Key });
+                        var _slice = new OxyPlot.Series.PieSlice(kv.Key, kv.Value); pie.Slices.Add(_slice); _warehouseSliceMap[_slice] = kv.Key;
                     else
                         other += kv.Value;
                 }
-                if (other > 0) pie.Slices.Add(new PieSlice("其他", other) { Tag = "其他" });
+                if (other > 0) var _sliceOther = new OxyPlot.Series.PieSlice("其他", other); pie.Slices.Add(_sliceOther); _warehouseSliceMap[_sliceOther] = "其他";
             }
 
             model.Series.Add(pie);
             _plotWarehouse.Model = model;
-            _plotWarehouse.MouseUp -= OnWarehousePieMouseUp;
-            _plotWarehouse.MouseUp += OnWarehousePieMouseUp;
         }
 
         private static IEnumerable<string> MissingSizes(IEnumerable<string> sizes)
@@ -510,7 +497,7 @@ namespace StyleWatcherWin
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
 
-            if (false) // disabled MA7 on overview
+            if (_cfg.ui?.showMovingAverage ?? true)
             {
                 var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
                 var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
@@ -620,40 +607,5 @@ namespace StyleWatcherWin
             wb.SaveAs(path);
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
         }
-        // 概览页“分仓库存占比”饼图：点击后跳转库存并定位仓库
-        private void OnWarehousePieMouseUp(object? sender, MouseEventArgs e)
-        {
-            if (e.Button != MouseButtons.Left) return;
-            try
-            {
-                var model = _plotWarehouse?.Model;
-                if (model == null) return;
-                var pie = model.Series.OfType<OxyPlot.Series.PieSeries>().FirstOrDefault();
-                if (pie == null) return;
-
-                var hit = pie.GetNearestPoint(new OxyPlot.ScreenPoint(e.Location.X, e.Location.Y), false);
-                if (hit?.Item is OxyPlot.Series.PieSlice slice)
-                {
-                    var name = (slice.Tag as string) ?? slice.Label ?? string.Empty;
-                    if (string.IsNullOrWhiteSpace(name)) return;
-                    if (name == "其他" || name == "无数据") return;
-
-                    // 切换到库存页 Tab
-                    try
-                    {
-                        var invTab = _invPage?.Parent as TabPage;
-                        var tabs = invTab?.Parent as TabControl;
-                        if (invTab != null && tabs != null)
-                            tabs.SelectedTab = invTab;
-                    }
-                    catch { /* ignore */ }
-
-                    // 激活对应仓库子页
-                    try { _invPage?.ActivateWarehouse(name); } catch { }
-                }
-            }
-            catch { /* ignore */ }
-        }
-    
     }
 }
