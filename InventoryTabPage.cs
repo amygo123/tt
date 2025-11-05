@@ -17,12 +17,13 @@ namespace StyleWatcherWin
 {
     /// <summary>
     /// 库存页：热力图（颜色×尺码）+ 颜色/尺码柱状 + 分仓 + 明细
-    /// 本次修复/迭代：
+    /// 本次迭代：
     /// 1) 修复 HeatMap 缺少 ColorAxis 的异常（新增 LinearColorAxis）
     /// 2) 悬浮提示（颜色/尺码/库存）+ 点击格子联动右侧明细筛选
     /// 3) 兼容 ResultForm 对 LoadInventoryAsync 的调用（新增该方法包装到 LoadAsync）
-    /// 4) 保持柱状图不做 TOP-N 限制（不锁前10）
-    /// 5) 分仓子页面升级：左侧“分仓热力图”，右侧“该仓明细”，点击联动筛选
+    /// 4) 柱状图按可用数降序，并默认缩放到前10（滚轮/右键可查看更多）
+    /// 5) 将搜索框移动到“分仓子页面”，只在对应子页面生效
+    /// 6) 明细表列头改为中文（品名/颜色/尺码/仓库/可用/现有）
     /// </summary>
     public class InventoryTabPage : TabPage
     {
@@ -63,13 +64,6 @@ namespace StyleWatcherWin
             public Dictionary<string, int> ByWarehouse() =>
                 Rows.GroupBy(r => r.Warehouse)
                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Available));
-
-            public InvSnapshot Filter(Func<InvRow, bool> pred)
-            {
-                var s = new InvSnapshot();
-                foreach (var r in Rows.Where(pred)) s.Rows.Add(r);
-                return s;
-            }
         }
         #endregion
 
@@ -79,20 +73,13 @@ namespace StyleWatcherWin
         private InvSnapshot _all = new();
         private string _styleName = "";
 
-        // 顶部工具区
-        private readonly TextBox _search = new() { PlaceholderText = "搜索（颜色/尺码/仓库）" };
-        private readonly Label _lblAvail = new() { AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold) };
-        private readonly Label _lblOnHand = new() { AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold), Margin = new Padding(16, 0, 0, 0) };
-        private readonly System.Windows.Forms.Timer _debounce = new() { Interval = 220 };
-
         // 主要图表
         private readonly PlotView _pvHeat = new() { Dock = DockStyle.Fill, BackColor = Color.White };
         private readonly PlotView _pvColor = new() { Dock = DockStyle.Fill, BackColor = Color.White };
         private readonly PlotView _pvSize = new() { Dock = DockStyle.Fill, BackColor = Color.White };
 
-        // 明细
+        // 明细（总览页右下角）
         private readonly DataGridView _grid = new() { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells };
-        private BindingList<InvRow> _gridData = new();
 
         // 子 Tab（按仓库）
         private readonly TabControl _subTabs = new() { Dock = DockStyle.Fill };
@@ -100,7 +87,7 @@ namespace StyleWatcherWin
         // 悬浮提示
         private readonly ToolTip _tip = new() { InitialDelay = 0, ReshowDelay = 0, AutoPopDelay = 8000, ShowAlways = true };
 
-        // 当前点击筛选（主热力图）
+        // 当前点击筛选（总览热力图）
         private (string? color, string? size)? _activeCell = null;
 
         public InventoryTabPage(AppConfig cfg)
@@ -109,7 +96,7 @@ namespace StyleWatcherWin
             Text = "库存";
 
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(12) };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); // 顶部工具条（合计/刷新）
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
             Controls.Add(root);
@@ -121,31 +108,38 @@ namespace StyleWatcherWin
             root.Controls.Add(four, 0, 1);
 
             root.Controls.Add(_subTabs, 0, 2);
-
-            _debounce.Tick += (s, e) => { _debounce.Stop(); ApplySearchFilter(); };
         }
 
         private Control BuildTopTools()
         {
             var p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
-            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
             p.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             p.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             p.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-            _search.Dock = DockStyle.Fill;
-            _search.TextChanged += (s, e) => _debounce.Start();
+            var lblAvail = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold), Name = "lblAvail" };
+            var lblOnHand = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold), Margin = new Padding(16, 0, 0, 0), Name = "lblOnHand" };
 
-            p.Controls.Add(_search, 0, 0);
-            p.Controls.Add(_lblAvail, 1, 0);
-            p.Controls.Add(_lblOnHand, 2, 0);
+            p.Controls.Add(lblAvail, 0, 0);
+            p.Controls.Add(lblOnHand, 1, 0);
 
-            var btnReload = new Button { Text = "刷新", AutoSize = true, Margin = new Padding(16, 0, 0, 0) };
+            var filler = new Panel { Dock = DockStyle.Fill };
+            p.Controls.Add(filler, 2, 0);
+
+            var btnReload = new Button { Text = "刷新", AutoSize = true };
             btnReload.Click += async (s, e) => await ReloadAsync(_styleName);
             p.Controls.Add(btnReload, 3, 0);
 
+            // 把引用保存到字段（便于更新文本）
+            _lblAvail = lblAvail;
+            _lblOnHand = lblOnHand;
+
             return p;
         }
+
+        private Label _lblAvail;
+        private Label _lblOnHand;
 
         private Control BuildFourArea()
         {
@@ -155,7 +149,7 @@ namespace StyleWatcherWin
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
             grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
-            _grid.DataSource = _gridData;
+            PrepareGridColumns(_grid);
 
             grid.Controls.Add(_pvSize, 0, 0);
             grid.Controls.Add(_pvColor, 1, 0);
@@ -165,7 +159,7 @@ namespace StyleWatcherWin
             AttachHeatmapInteractions(_pvHeat, sel =>
             {
                 _activeCell = sel;
-                ApplySearchFilter();
+                ApplyOverviewFilter();
             });
 
             return grid;
@@ -184,7 +178,6 @@ namespace StyleWatcherWin
         private async Task ReloadAsync(string styleName)
         {
             _activeCell = null; // 清筛选
-            _search.Text = "";
 
             _all = await FetchInventoryAsync(styleName);
             RenderAll(_all);
@@ -196,12 +189,12 @@ namespace StyleWatcherWin
             _lblOnHand.Text = $"现有合计：{snap.TotalOnHand}";
 
             RenderHeatmap(snap, _pvHeat, "颜色×尺码 可用数热力图");
-            RenderBarsByColor(snap, _pvColor, "颜色可用（降序）");
-            RenderBarsBySize(snap, _pvSize, "尺码可用（降序）");
+            RenderBarsByColor(snap, _pvColor, "颜色可用（降序，滚轮/右键查看更多）");
+            RenderBarsBySize(snap, _pvSize, "尺码可用（降序，滚轮/右键查看更多）");
             RenderWarehouseTabs(snap);
 
             try { SummaryUpdated?.Invoke(snap.TotalAvailable, snap.TotalOnHand, snap.ByWarehouse()); } catch { }
-            FillGrid(_grid, snap.Rows);
+            BindGrid(_grid, snap.Rows);
         }
 
         #region 数据获取/解析
@@ -250,19 +243,19 @@ namespace StyleWatcherWin
         }
         #endregion
 
-        #region 绘图
+        #region 绘图与缩放
         private void RenderBarsByColor(InvSnapshot snap, PlotView pv, string title)
         {
             var model = new PlotModel { Title = title };
             var data = snap.Rows.GroupBy(r => r.Color)
                                 .Select(g => new { Key = g.Key, V = g.Sum(x => x.Available) })
-                                .OrderByDescending(x => x.V)
+                                .OrderByDescending(x => x.V) // 降序
                                 .ToList();
 
-            var cat = new CategoryAxis { Position = AxisPosition.Left }; // BarSeries => 类别轴在左边
+            var cat = new CategoryAxis { Position = AxisPosition.Left, IsZoomEnabled = true, IsPanEnabled = true };
             foreach (var d in data) cat.Labels.Add(d.Key);
 
-            var val = new LinearAxis { Position = AxisPosition.Bottom, MinorGridlineStyle = LineStyle.Dot, MajorGridlineStyle = LineStyle.Solid };
+            var val = new LinearAxis { Position = AxisPosition.Bottom, MinorGridlineStyle = LineStyle.Dot, MajorGridlineStyle = LineStyle.Solid, IsZoomEnabled = true, IsPanEnabled = true };
             var series = new BarSeries();
             foreach (var d in data) series.Items.Add(new BarItem(d.V));
 
@@ -270,6 +263,12 @@ namespace StyleWatcherWin
             model.Axes.Add(val);
             model.Series.Add(series);
             pv.Model = model;
+
+            // 默认缩放到前10
+            ApplyTopNZoom(cat, data.Count, 10);
+
+            // 绑定右键拖拽平移 & 滚轮缩放
+            BindPanZoom(pv);
         }
 
         private void RenderBarsBySize(InvSnapshot snap, PlotView pv, string title)
@@ -277,13 +276,13 @@ namespace StyleWatcherWin
             var model = new PlotModel { Title = title };
             var data = snap.Rows.GroupBy(r => r.Size)
                                 .Select(g => new { Key = g.Key, V = g.Sum(x => x.Available) })
-                                .OrderByDescending(x => x.V)
+                                .OrderByDescending(x => x.V) // 降序
                                 .ToList();
 
-            var cat = new CategoryAxis { Position = AxisPosition.Left };
+            var cat = new CategoryAxis { Position = AxisPosition.Left, IsZoomEnabled = true, IsPanEnabled = true };
             foreach (var d in data) cat.Labels.Add(d.Key);
 
-            var val = new LinearAxis { Position = AxisPosition.Bottom, MinorGridlineStyle = LineStyle.Dot, MajorGridlineStyle = LineStyle.Solid };
+            var val = new LinearAxis { Position = AxisPosition.Bottom, MinorGridlineStyle = LineStyle.Dot, MajorGridlineStyle = LineStyle.Solid, IsZoomEnabled = true, IsPanEnabled = true };
             var series = new BarSeries();
             foreach (var d in data) series.Items.Add(new BarItem(d.V));
 
@@ -291,8 +290,25 @@ namespace StyleWatcherWin
             model.Axes.Add(val);
             model.Series.Add(series);
             pv.Model = model;
+
+            // 默认缩放到前10
+            ApplyTopNZoom(cat, data.Count, 10);
+
+            // 绑定右键拖拽平移 & 滚轮缩放
+            BindPanZoom(pv);
         }
 
+        private void ApplyTopNZoom(CategoryAxis cat, int total, int n)
+        {
+            if (total <= 0) return;
+            var maxIndex = Math.Min(n - 1, total - 1);
+            // CategoryAxis 的可视范围以索引为单位，设置到 [ -0.5, maxIndex + 0.5 ]
+            cat.Minimum = -0.5;
+            cat.Maximum = maxIndex + 0.5;
+        }
+        #endregion
+
+        #region 热力图
         private sealed class HeatmapContext
         {
             public List<string> Colors = new();
@@ -373,6 +389,7 @@ namespace StyleWatcherWin
         private void RenderHeatmap(InvSnapshot snap, PlotView pv, string title)
         {
             BuildHeatmap(snap, pv, title);
+            BindPanZoom(pv);
         }
         #endregion
 
@@ -385,80 +402,129 @@ namespace StyleWatcherWin
             {
                 var page = new TabPage($"{g.Key}（{g.Sum(x => x.Available)}）");
 
+                // 布局：上=搜索框，下=左右联动（热力图+明细）
+                var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+                root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+                root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+                var search = new TextBox { Dock = DockStyle.Fill, PlaceholderText = "搜索本仓（颜色/尺码）" };
+                root.Controls.Add(search, 0, 0);
+
                 var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
                 panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
                 panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
 
                 var pv = new PlotView { Dock = DockStyle.Fill, BackColor = Color.White };
                 var grid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells };
+                PrepareGridColumns(grid);
 
                 panel.Controls.Add(pv, 0, 0);
                 panel.Controls.Add(grid, 1, 0);
-                page.Controls.Add(panel);
+
+                root.Controls.Add(panel, 0, 1);
+                page.Controls.Add(root);
 
                 var subSnap = new InvSnapshot();
                 foreach (var r in g) subSnap.Rows.Add(r);
                 BuildHeatmap(subSnap, pv, $"{g.Key} 颜色×尺码");
 
                 // 初始填充该仓明细
-                FillGrid(grid, subSnap.Rows);
+                BindGrid(grid, subSnap.Rows);
+
+                // per-tab 筛选状态
+                (string? color, string? size)? sel = null;
 
                 // 联动：点击该仓热力图筛选右侧明细
-                (string? color, string? size)? sel = null;
                 AttachHeatmapInteractions(pv, newSel =>
                 {
                     sel = newSel;
-                    IEnumerable<InvRow> q = subSnap.Rows;
-                    if (sel is { } ac)
-                    {
-                        if (!string.IsNullOrEmpty(ac.color)) q = q.Where(r => r.Color == ac.color);
-                        if (!string.IsNullOrEmpty(ac.size)) q = q.Where(r => r.Size == ac.size);
-                    }
-                    FillGrid(grid, q);
+                    ApplyWarehouseFilter(grid, subSnap, search.Text, sel);
                 });
+
+                // 搜索：防抖 220ms
+                var t = new System.Windows.Forms.Timer { Interval = 220 };
+                search.TextChanged += (s2, e2) => { t.Stop(); t.Start(); };
+                t.Tick += (s3, e3) => { t.Stop(); ApplyWarehouseFilter(grid, subSnap, search.Text, sel); };
 
                 _subTabs.TabPages.Add(page);
             }
             _subTabs.ResumeLayout();
         }
 
-        private void FillGrid(DataGridView grid, IEnumerable<InvRow> rows)
+        private void BindGrid(DataGridView grid, IEnumerable<InvRow> rows)
         {
+            PrepareGridColumns(grid);
             grid.DataSource = new BindingList<InvRow>(rows.ToList());
         }
 
-        private void ApplySearchFilter()
+        private void PrepareGridColumns(DataGridView grid)
         {
-            var key = (_search.Text ?? "").Trim();
-            IEnumerable<InvRow> q = _all.Rows;
+            if (grid.Columns.Count > 0 && grid.Columns[0].DataPropertyName == "Name") return;
 
-            if (!string.IsNullOrEmpty(key))
-                q = q.Where(r => (r.Color?.IndexOf(key, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0
-                              || (r.Size?.IndexOf(key, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0
-                              || (r.Warehouse?.IndexOf(key, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0);
-
-            if (_activeCell is { } ac)
-            {
-                if (!string.IsNullOrEmpty(ac.color))
-                    q = q.Where(r => r.Color == ac.color);
-                if (!string.IsNullOrEmpty(ac.size))
-                    q = q.Where(r => r.Size == ac.size);
-            }
-
-            FillGrid(_grid, q);
+            grid.AutoGenerateColumns = false;
+            grid.Columns.Clear();
+            grid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Name", HeaderText = "品名" });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Color", HeaderText = "颜色" });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Size", HeaderText = "尺码" });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Warehouse", HeaderText = "仓库" });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Available", HeaderText = "可用" });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "OnHand", HeaderText = "现有" });
         }
 
-        #region 交互：取消默认点击 → 自定义悬浮与联动筛选
+        private void ApplyOverviewFilter()
+        {
+            IEnumerable<InvRow> q = _all.Rows;
+            if (_activeCell is { } ac)
+            {
+                if (!string.IsNullOrEmpty(ac.color)) q = q.Where(r => r.Color == ac.color);
+                if (!string.IsNullOrEmpty(ac.size)) q = q.Where(r => r.Size == ac.size);
+            }
+            BindGrid(_grid, q);
+        }
+
+        private void ApplyWarehouseFilter(DataGridView grid, InvSnapshot snap, string key, (string? color, string? size)? sel)
+        {
+            IEnumerable<InvRow> q = snap.Rows;
+            var k = (key ?? "").Trim();
+            if (k.Length > 0)
+            {
+                q = q.Where(r => (r.Color?.IndexOf(k, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0
+                              || (r.Size?.IndexOf(k, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0);
+            }
+            if (sel is { } ac)
+            {
+                if (!string.IsNullOrEmpty(ac.color)) q = q.Where(r => r.Color == ac.color);
+                if (!string.IsNullOrEmpty(ac.size)) q = q.Where(r => r.Size == ac.size);
+            }
+            BindGrid(grid, q);
+        }
+
+        #region 交互：取消默认点击 → 自定义悬浮与联动筛选 + 右键平移/滚轮缩放
+        private void BindPanZoom(PlotView pv)
+        {
+            try
+            {
+                var ctl = pv.Controller ?? new PlotController();
+                // 允许滚轮缩放
+                ctl.BindMouseWheel(PlotCommands.ZoomWheel);
+                // 右键拖拽平移
+                ctl.BindMouseDown(OxyMouseButton.Right, PlotCommands.PanAt);
+                pv.Controller = ctl;
+            }
+            catch { }
+        }
+
         private void AttachHeatmapInteractions(PlotView pv, Action<(string? color, string? size)?> onSelectionChanged)
         {
             // 取消默认左键行为（包括默认 Tracker）
             try
             {
-                var ctl = new PlotController();
+                var ctl = pv.Controller ?? new PlotController();
                 ctl.UnbindMouseDown(OxyMouseButton.Left);
-                // 保留中键平移/滚轮缩放（可选）
-                ctl.BindMouseWheel(PlotCommands.ZoomWheel);
+                // 保留中键平移/右键平移/滚轮缩放
                 ctl.BindMouseDown(OxyMouseButton.Middle, PlotCommands.PanAt);
+                ctl.BindMouseDown(OxyMouseButton.Right, PlotCommands.PanAt);
+                ctl.BindMouseWheel(PlotCommands.ZoomWheel);
                 pv.Controller = ctl;
             }
             catch { /* ignore */ }
@@ -516,11 +582,7 @@ namespace StyleWatcherWin
                     {
                         var color = ctx.Colors[xi];
                         var size = ctx.Sizes[yi];
-
-                        // 二次点击取消
-                        var current = (color, size);
-                        // 读取之前的选择（通过外部闭包保存），这里只能通知外部决定
-                        onSelectionChanged(current);
+                        onSelectionChanged((color, size));
                         return;
                     }
                 }
