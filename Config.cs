@@ -19,6 +19,7 @@ namespace StyleWatcherWin
 
         // A2: 库存接口
         public InventoryCfg inventory { get; set; } = new InventoryCfg();
+        public LookupCfg lookup { get; set; } = new LookupCfg();
 
         // 新增：UI 配置（趋势窗口、是否显示 MA）
         public UiCfg ui { get; set; } = new UiCfg();
@@ -43,7 +44,14 @@ namespace StyleWatcherWin
 
         public class InventoryCfg
         {
-            public string url_base { get; set; } = "http://192.168.40.97:8000/inventory?style_name=";
+            public string url_base { get; set; } 
+
+        public class LookupCfg
+        {
+            // 通过款式查询定级/最低价/保本价
+            public string url_base { get; set; } = "http://192.168.40.97:8002/lookup?name=";
+        }
+= "http://192.168.40.97:8000/inventory?style_name=";
             public string default_style { get; set; } = "纯色/通纯棉圆领短T/黑/XL";
         }
 
@@ -88,6 +96,27 @@ namespace StyleWatcherWin
 
     public static class ApiHelper
     {
+        // A3: 查询款式定级/价格（GET）
+        public static async System.Threading.Tasks.Task<string> QueryLookupAsync(AppConfig cfg, string styleName)
+        {
+            try
+            {
+                var baseUrl = cfg.lookup?.url_base ?? "";
+                if (string.IsNullOrWhiteSpace(baseUrl)) return "[]";
+                var url = baseUrl + System.Uri.EscapeDataString(styleName ?? "");
+                using var http = new System.Net.Http.HttpClient
+                {
+                    Timeout = System.TimeSpan.FromSeconds(Math.Max(3, cfg.timeout_seconds))
+                };
+                var raw = await http.GetStringAsync(url);
+                return raw ?? "[]";
+            }
+            catch (System.Exception ex)
+            {
+                return $"[] // 请求失败：{ex.Message}";
+            }
+        }
+
         public static async System.Threading.Tasks.Task<string> QueryAsync(AppConfig cfg, string text)
         {
             try
