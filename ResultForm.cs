@@ -620,8 +620,6 @@ namespace StyleWatcherWin
             wb.SaveAs(path);
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
         }
-    }
-
         // 概览页“分仓库存占比”饼图：点击后跳转库存并定位仓库
         private void OnWarehousePieMouseUp(object? sender, MouseEventArgs e)
         {
@@ -657,4 +655,5 @@ namespace StyleWatcherWin
             catch { /* ignore */ }
         }
     
+    }
 }
