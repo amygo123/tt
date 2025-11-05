@@ -268,7 +268,7 @@ namespace StyleWatcherWin
             {
                 var rb=new RadioButton{Text=$"{w} 日",AutoSize=true,Tag=w,Margin=new Padding(0,2,18,0)};
                 if(w==_trendWindow) rb.Checked=true;
-                rb.CheckedChanged+=(s,e)=>{ var me=(RadioButton)s; if(me.Checked){ _trendWindow=(int)me.Tag; if(_sales.Count>0) RenderCharts(_sales); } };
+                rb.CheckedChanged += (s, e) => { var rbCtrl = s as RadioButton; if (rbCtrl == null || !rbCtrl.Checked) return; if (rbCtrl.Tag is int w2) { _trendWindow = w2; if (_sales != null && _sales.Count > 0) RenderCharts(_sales); } };
                 _trendSwitch.Controls.Add(rb);
             }
             tools.Controls.Add(_trendSwitch);
@@ -634,7 +634,7 @@ namespace StyleWatcherWin
                 var hit = pie.GetNearestPoint(new OxyPlot.ScreenPoint(e.Location.X, e.Location.Y), false);
                 if (hit?.Item is OxyPlot.Series.PieSlice slice)
                 {
-                    var name = slice.Label ?? slice.Text ?? string.Empty;
+                    var name = slice.Label ?? string.Empty;
                     if (string.IsNullOrWhiteSpace(name)) return;
                     if (name == "其他" || name == "无数据") return;
 
