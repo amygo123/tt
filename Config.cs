@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+// [StyleWatcher] Lookup KPI integrated - marker 2025-11-05T10:09:23.284643Z
 
 namespace StyleWatcherWin
 {
@@ -18,7 +19,6 @@ namespace StyleWatcherWin
 
         // A2: 库存接口
         public InventoryCfg inventory { get; set; } = new InventoryCfg();
-        public LookupCfg lookup { get; set; } = new LookupCfg();
 
         // 新增：UI 配置（趋势窗口、是否显示 MA）
         public UiCfg ui { get; set; } = new UiCfg();
@@ -41,21 +41,13 @@ namespace StyleWatcherWin
             public string Content_Type { get; set; } = "application/json";
         }
 
-        
         public class InventoryCfg
         {
             public string url_base { get; set; } = "http://192.168.40.97:8000/inventory?style_name=";
             public string default_style { get; set; } = "纯色/通纯棉圆领短T/黑/XL";
         }
 
-        public class LookupCfg
-        {
-            // 通过款名查询定级/最低价/保本价
-            public string url_base { get; set; } = "http://192.168.40.97:8002/lookup?name=";
-        }
-
         public class UiCfg
-public class UiCfg
         {
             public int[] trendWindows { get; set; } = new[] { 7, 14, 30 };
             public bool showMovingAverage { get; set; } = true;
@@ -156,28 +148,4 @@ public class UiCfg
             }
         }
     }
-}
-
-
-        public static async System.Threading.Tasks.Task<string> QueryLookupAsync(AppConfig cfg, string styleName)
-        {
-            try
-            {
-                var baseUrl = cfg.lookup?.url_base ?? "";
-                if (string.IsNullOrWhiteSpace(baseUrl)) return "[]";
-                var url = baseUrl + System.Uri.EscapeDataString(styleName ?? "");
-                using var http = new System.Net.Http.HttpClient
-                {
-                    Timeout = System.TimeSpan.FromSeconds(Math.Max(3, cfg.timeout_seconds))
-                };
-                var raw = await http.GetStringAsync(url);
-                return raw ?? "[]";
-            }
-            catch (System.Exception ex)
-            {
-                return $"[] // 请求失败：{ex.Message}";
-            }
-        }
-
-}
 }

@@ -11,6 +11,7 @@ using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
+// [StyleWatcher] Lookup KPI integrated - marker 2025-11-05T10:09:23.284643Z
 
 namespace StyleWatcherWin
 {
@@ -45,9 +46,6 @@ namespace StyleWatcherWin
         private readonly Panel _kpiSales7 = new();
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
-        private readonly Panel _kpiGrade = new();
-        private readonly Panel _kpiMinPrice = new();
-        private readonly Panel _kpiBreakeven = new();
         private readonly Panel _kpiMissing = new();
         private FlowLayoutPanel? _kpiMissingFlow;
 
@@ -116,9 +114,6 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpi(_kpiSales7,"近7日销量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiInv,"可用库存总量","—"));
             _kpi.Controls.Add(MakeKpi(_kpiDoc,"库存天数","—"));
-            _kpi.Controls.Add(MakeKpi(_kpiGrade,"定级","—"));
-            _kpi.Controls.Add(MakeKpi(_kpiMinPrice,"最低价","—"));
-            _kpi.Controls.Add(MakeKpi(_kpiBreakeven,"保本价","—"));
             _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             content.Controls.Add(_kpi,0,0);
 
@@ -344,7 +339,7 @@ namespace StyleWatcherWin
         public void ShowNoActivateAtCursor(){ try{ StartPosition=FormStartPosition.Manual; var pt=Cursor.Position; Location=new Point(Math.Max(0,pt.X-Width/2),Math.Max(0,pt.Y-Height/2)); Show(); }catch{ Show(); } }
         public void ShowAndFocusCentered(){ ShowAndFocusCentered(_cfg.window.alwaysOnTop); }
         public void ShowAndFocusCentered(bool alwaysOnTop){ TopMost=alwaysOnTop; StartPosition=FormStartPosition.CenterScreen; Show(); Activate(); FocusInput(); }
-        public void SetLoading(string message){ try{ SetKpiValue(_kpiSales7, "—"); SetKpiValue(_kpiInv, "—"); SetKpiValue(_kpiDoc, "—"); SetKpiValue(_kpiMissing, "—"); SetKpiValue(_kpiGrade, "—"); SetKpiValue(_kpiMinPrice, "—"); SetKpiValue(_kpiBreakeven, "—"); } catch {} }
+        public void SetLoading(string message){ SetKpiValue(_kpiSales7,"—"); SetKpiValue(_kpiInv,"—"); SetKpiValue(_kpiDoc,"—"); SetKpiValue(_kpiMissing,"—"); }
         public async void ApplyRawText(string selection, string parsed){ _input.Text=selection??string.Empty; _lastDisplayText = parsed ?? string.Empty; await LoadTextAsync(parsed??string.Empty); }
         public void ApplyRawText(string text){ _input.Text=text??string.Empty; }
 
@@ -403,7 +398,6 @@ namespace StyleWatcherWin
             if (!string.IsNullOrWhiteSpace(styleName))
             {
                 try { _ = _invPage?.LoadInventoryAsync(styleName); } catch {}
-                try { _ = LoadLookupAsync(styleName); } catch {}
             }
         }
 
@@ -627,40 +621,6 @@ if (other > 0)
 
             wb.SaveAs(path);
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
-        
-        private class LookupItem
-        {
-            public string style_name { get; set; }
-            public string grade { get; set; }
-            public double? min_price_one { get; set; }
-            public double? breakeven_one { get; set; }
         }
-
-        private async System.Threading.Tasks.Task LoadLookupAsync(string styleName)
-        {
-            try
-            {
-                var raw = await ApiHelper.QueryLookupAsync(_cfg, styleName);
-                // 可能返回注释，去掉尾部注释
-                var json = raw.Split(new[] {"//"}, StringSplitOptions.None)[0].Trim();
-                if (string.IsNullOrWhiteSpace(json)) { SetKpiValue(_kpiGrade,"—"); SetKpiValue(_kpiMinPrice,"—"); SetKpiValue(_kpiBreakeven,"—"); return; }
-                var items = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<LookupItem>>(json, new System.Text.Json.JsonSerializerOptions{
-                    PropertyNameCaseInsensitive = true
-                }) ?? new System.Collections.Generic.List<LookupItem>();
-                var it = items.FirstOrDefault();
-                if (it == null)
-                {
-                    SetKpiValue(_kpiGrade,"—"); SetKpiValue(_kpiMinPrice,"—"); SetKpiValue(_kpiBreakeven,"—"); return;
-                }
-                SetKpiValue(_kpiGrade, string.IsNullOrWhiteSpace(it.grade) ? "—" : it.grade);
-                SetKpiValue(_kpiMinPrice, it.min_price_one.HasValue ? it.min_price_one.Value.ToString("0.##") : "—");
-                SetKpiValue(_kpiBreakeven, it.breakeven_one.HasValue ? it.breakeven_one.Value.ToString("0.##") : "—");
-            }
-            catch
-            {
-                SetKpiValue(_kpiGrade,"—"); SetKpiValue(_kpiMinPrice,"—"); SetKpiValue(_kpiBreakeven,"—");
-            }
-        }
-    }
     }
 }
