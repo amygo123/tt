@@ -347,7 +347,7 @@ namespace StyleWatcherWin
             if (p95 <= 0) p95 = minPos;
 
             // 自定义更直观的配色：浅 -> 绿 -> 橙 -> 红
-            var palette = OxyPalette.FromColors(
+            var palette = OxyPalette.Interpolate(256, 
                 OxyColor.FromRgb(229, 245, 224), // very light
                 OxyColor.FromRgb(161, 217, 155), // green
                 OxyColor.FromRgb(255, 224, 102), // yellow-ish
