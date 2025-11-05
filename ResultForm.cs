@@ -89,6 +89,19 @@ namespace StyleWatcherWin
             BackColor = Color.White;
             KeyPreview = true;
             KeyDown += (s,e)=>{ if(e.KeyCode==Keys.Escape) Hide(); };
+            // 设置窗口图标：优先 EXE 内置图标，其次 Resources\app.ico
+            try
+            {
+                var exeIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (exeIcon != null) this.Icon = exeIcon;
+                else
+                {
+                    var icoPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Resources", "app.ico");
+                    if (System.IO.File.Exists(icoPath)) this.Icon = new Icon(icoPath);
+                }
+            }
+            catch { /* ignore */ }
+
 
             var root = new TableLayoutPanel{Dock=DockStyle.Fill,RowCount=2,ColumnCount=1};
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));

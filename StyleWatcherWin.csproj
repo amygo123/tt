@@ -5,21 +5,24 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!-- Let CI pass publish flags; keep project clean -->
     <AssemblyName>StyleWatcherWin</AssemblyName>
     <RootNamespace>StyleWatcherWin</RootNamespace>
+    <!-- 设置应用程序图标（用于 EXE 与窗口默认图标） -->
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Pin ClosedXML to avoid NU1603 resolution warning -->
     <PackageReference Include="ClosedXML" Version="0.104.0" />
-    <!-- OxyPlot.WindowsForms pulls OxyPlot.Core; pin to a stable 2.x line -->
     <PackageReference Include="OxyPlot.WindowsForms" Version="2.1.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Ensure appsettings.json goes next to the exe for runtime editing -->
+    <!-- 运行时可编辑配置 -->
     <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 确保 app.ico 在输出目录，供托盘图标回退路径使用（单文件发布时 EXE 内已烙入图标） -->
+    <None Include="Resources\app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

@@ -15,16 +15,6 @@ using OxyPlot.WindowsForms;
 
 namespace StyleWatcherWin
 {
-    /// <summary>
-    /// 库存页：热力图（颜色×尺码）+ 颜色/尺码柱状 + 分仓 + 明细
-    /// 本次迭代：
-    /// 1) 修复 HeatMap 缺少 ColorAxis 的异常（新增 LinearColorAxis）
-    /// 2) 悬浮提示（颜色/尺码/库存）+ 点击格子联动右侧明细筛选
-    /// 3) 兼容 ResultForm 对 LoadInventoryAsync 的调用（新增该方法包装到 LoadAsync）
-    /// 4) 柱状图按可用数降序，并默认缩放到前10（滚轮/右键可查看更多）
-    /// 5) 将搜索框移动到“分仓子页面”，只在对应子页面生效
-    /// 6) 明细表列头改为中文（品名/颜色/尺码/仓库/可用/现有）
-    /// </summary>
     public class InventoryTabPage : TabPage
     {
         public event Action<int, int, Dictionary<string, int>>? SummaryUpdated;
@@ -78,7 +68,7 @@ namespace StyleWatcherWin
         private readonly PlotView _pvColor = new() { Dock = DockStyle.Fill, BackColor = Color.White };
         private readonly PlotView _pvSize = new() { Dock = DockStyle.Fill, BackColor = Color.White };
 
-        // 明细（总览页右下角）
+        // 明细（总览右下）
         private readonly DataGridView _grid = new() { Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells };
 
         // 子 Tab（按仓库）
@@ -89,6 +79,9 @@ namespace StyleWatcherWin
 
         // 当前点击筛选（总览热力图）
         private (string? color, string? size)? _activeCell = null;
+
+        private Label _lblAvail = new();
+        private Label _lblOnHand = new();
 
         public InventoryTabPage(AppConfig cfg)
         {
@@ -118,11 +111,11 @@ namespace StyleWatcherWin
             p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             p.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-            var lblAvail = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold), Name = "lblAvail" };
-            var lblOnHand = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold), Margin = new Padding(16, 0, 0, 0), Name = "lblOnHand" };
+            _lblAvail = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold) };
+            _lblOnHand = new Label { AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold), Margin = new Padding(16, 0, 0, 0) };
 
-            p.Controls.Add(lblAvail, 0, 0);
-            p.Controls.Add(lblOnHand, 1, 0);
+            p.Controls.Add(_lblAvail, 0, 0);
+            p.Controls.Add(_lblOnHand, 1, 0);
 
             var filler = new Panel { Dock = DockStyle.Fill };
             p.Controls.Add(filler, 2, 0);
@@ -131,15 +124,8 @@ namespace StyleWatcherWin
             btnReload.Click += async (s, e) => await ReloadAsync(_styleName);
             p.Controls.Add(btnReload, 3, 0);
 
-            // 把引用保存到字段（便于更新文本）
-            _lblAvail = lblAvail;
-            _lblOnHand = lblOnHand;
-
             return p;
         }
-
-        private Label _lblAvail;
-        private Label _lblOnHand;
 
         private Control BuildFourArea()
         {
@@ -237,22 +223,29 @@ namespace StyleWatcherWin
             }
             catch
             {
-                // ignore，返回空快照
+                // ignore
             }
             return s;
         }
         #endregion
 
-        #region 绘图与缩放
+        #region 绘图与缩放（柱状图降序 + 默认 Top10）
         private void RenderBarsByColor(InvSnapshot snap, PlotView pv, string title)
         {
             var model = new PlotModel { Title = title };
             var data = snap.Rows.GroupBy(r => r.Color)
                                 .Select(g => new { Key = g.Key, V = g.Sum(x => x.Available) })
-                                .OrderByDescending(x => x.V) // 降序
+                                .OrderByDescending(x => x.V)
                                 .ToList();
 
-            var cat = new CategoryAxis { Position = AxisPosition.Left, IsZoomEnabled = true, IsPanEnabled = true };
+            var cat = new CategoryAxis
+            {
+                Position = AxisPosition.Left,
+                IsZoomEnabled = true,
+                IsPanEnabled = true,
+                // 关键：翻转轴方向，确保数据按我们添加的顺序从上到下显示
+                StartPosition = 1, EndPosition = 0
+            };
             foreach (var d in data) cat.Labels.Add(d.Key);
 
             var val = new LinearAxis { Position = AxisPosition.Bottom, MinorGridlineStyle = LineStyle.Dot, MajorGridlineStyle = LineStyle.Solid, IsZoomEnabled = true, IsPanEnabled = true };
@@ -264,10 +257,7 @@ namespace StyleWatcherWin
             model.Series.Add(series);
             pv.Model = model;
 
-            // 默认缩放到前10
             ApplyTopNZoom(cat, data.Count, 10);
-
-            // 绑定右键拖拽平移 & 滚轮缩放
             BindPanZoom(pv);
         }
 
@@ -276,10 +266,16 @@ namespace StyleWatcherWin
             var model = new PlotModel { Title = title };
             var data = snap.Rows.GroupBy(r => r.Size)
                                 .Select(g => new { Key = g.Key, V = g.Sum(x => x.Available) })
-                                .OrderByDescending(x => x.V) // 降序
+                                .OrderByDescending(x => x.V)
                                 .ToList();
 
-            var cat = new CategoryAxis { Position = AxisPosition.Left, IsZoomEnabled = true, IsPanEnabled = true };
+            var cat = new CategoryAxis
+            {
+                Position = AxisPosition.Left,
+                IsZoomEnabled = true,
+                IsPanEnabled = true,
+                StartPosition = 1, EndPosition = 0
+            };
             foreach (var d in data) cat.Labels.Add(d.Key);
 
             var val = new LinearAxis { Position = AxisPosition.Bottom, MinorGridlineStyle = LineStyle.Dot, MajorGridlineStyle = LineStyle.Solid, IsZoomEnabled = true, IsPanEnabled = true };
@@ -291,10 +287,7 @@ namespace StyleWatcherWin
             model.Series.Add(series);
             pv.Model = model;
 
-            // 默认缩放到前10
             ApplyTopNZoom(cat, data.Count, 10);
-
-            // 绑定右键拖拽平移 & 滚轮缩放
             BindPanZoom(pv);
         }
 
@@ -302,18 +295,30 @@ namespace StyleWatcherWin
         {
             if (total <= 0) return;
             var maxIndex = Math.Min(n - 1, total - 1);
-            // CategoryAxis 的可视范围以索引为单位，设置到 [ -0.5, maxIndex + 0.5 ]
             cat.Minimum = -0.5;
             cat.Maximum = maxIndex + 0.5;
         }
         #endregion
 
-        #region 热力图
+        #region 热力图（使用分位截断与更直观的配色）
         private sealed class HeatmapContext
         {
             public List<string> Colors = new();
             public List<string> Sizes = new();
             public double[,] Data = new double[0, 0];
+        }
+
+        private static double Percentile(List<double> sorted, double p)
+        {
+            if (sorted.Count == 0) return 0;
+            if (p <= 0) return sorted.First();
+            if (p >= 1) return sorted.Last();
+            var idx = (sorted.Count - 1) * p;
+            var lo = (int)Math.Floor(idx);
+            var hi = (int)Math.Ceiling(idx);
+            if (lo == hi) return sorted[lo];
+            var frac = idx - lo;
+            return sorted[lo] * (1 - frac) + sorted[hi] * frac;
         }
 
         private HeatmapContext BuildHeatmap(InvSnapshot snap, PlotView pv, string title)
@@ -333,8 +338,25 @@ namespace StyleWatcherWin
 
             var model = new PlotModel { Title = title };
 
-            // 颜色轴（修复异常）
-            var caxis = new LinearColorAxis { Position = AxisPosition.Right, Palette = OxyPalettes.Jet(256) };
+            // 统计分布：用 95 分位作为色轴上限，增强对比；并保留所有数据（>P95 的显示为同一深色）
+            var vals = new List<double>();
+            foreach (var v in data) if (v > 0) vals.Add(v);
+            vals.Sort();
+            var p95 = Percentile(vals, 0.95);
+            var max = vals.Count > 0 ? vals.Last() : 1.0;
+            if (p95 <= 0) p95 = max;
+
+            // 更直观的配色：Viridis，低值接近浅黄绿，高值深蓝紫；零值显示为极浅灰
+            var palette = OxyPalettes.Viridis(256);
+            var caxis = new LinearColorAxis
+            {
+                Position = AxisPosition.Right,
+                Palette = palette,
+                Minimum = 0,
+                Maximum = p95,
+                LowColor = OxyColor.FromRgb(245, 245, 245), // 近似表示 0
+                HighColor = OxyColor.FromRgb(68, 1, 84)     // 最高端（与 Viridis 顶端接近）
+            };
             model.Axes.Add(caxis);
 
             // 类目映射轴
@@ -459,8 +481,6 @@ namespace StyleWatcherWin
 
         private void PrepareGridColumns(DataGridView grid)
         {
-            if (grid.Columns.Count > 0 && grid.Columns[0].DataPropertyName == "Name") return;
-
             grid.AutoGenerateColumns = false;
             grid.Columns.Clear();
             grid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Name", HeaderText = "品名" });
@@ -499,7 +519,7 @@ namespace StyleWatcherWin
             BindGrid(grid, q);
         }
 
-        #region 交互：取消默认点击 → 自定义悬浮与联动筛选 + 右键平移/滚轮缩放
+        #region 交互：悬浮与联动 + 右键平移/滚轮缩放
         private void BindPanZoom(PlotView pv)
         {
             try
@@ -521,7 +541,7 @@ namespace StyleWatcherWin
             {
                 var ctl = pv.Controller ?? new PlotController();
                 ctl.UnbindMouseDown(OxyMouseButton.Left);
-                // 保留中键平移/右键平移/滚轮缩放
+                // 保留中键/右键平移 + 滚轮缩放
                 ctl.BindMouseDown(OxyMouseButton.Middle, PlotCommands.PanAt);
                 ctl.BindMouseDown(OxyMouseButton.Right, PlotCommands.PanAt);
                 ctl.BindMouseWheel(PlotCommands.ZoomWheel);
