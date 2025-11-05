@@ -451,13 +451,24 @@ namespace StyleWatcherWin
                 var keepSet = new HashSet<string>(keep.Select(k => k.Key));
                 double other = 0;
                 foreach (var kv in list)
-                {
-                    if (keepSet.Contains(kv.Key))
-                        var _slice = new OxyPlot.Series.PieSlice(kv.Key, kv.Value); pie.Slices.Add(_slice); _warehouseSliceMap[_slice] = kv.Key;
-                    else
-                        other += kv.Value;
-                }
-                if (other > 0) var _sliceOther = new OxyPlot.Series.PieSlice("其他", other); pie.Slices.Add(_sliceOther); _warehouseSliceMap[_sliceOther] = "其他";
+{
+    if (keepSet.Contains(kv.Key))
+    {
+        var _slice = new OxyPlot.Series.PieSlice(kv.Key, kv.Value);
+        pie.Slices.Add(_slice);
+        _warehouseSliceMap[_slice] = kv.Key;
+    }
+    else
+    {
+        other += kv.Value;
+    }
+}
+if (other > 0)
+{
+    var _sliceOther = new OxyPlot.Series.PieSlice("其他", other);
+    pie.Slices.Add(_sliceOther);
+    _warehouseSliceMap[_sliceOther] = "其他";
+}
             }
 
             model.Series.Add(pie);
