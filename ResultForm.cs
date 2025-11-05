@@ -255,7 +255,7 @@ namespace StyleWatcherWin
             {
                 var rb=new RadioButton{Text=$"{w} 日",AutoSize=true,Tag=w,Margin=new Padding(0,2,18,0)};
                 if(w==_trendWindow) rb.Checked=true;
-                rb.CheckedChanged+=(s,e)=>{ var me=(RadioButton)s; if(me.Checked){ _trendWindow=(int)me.Tag; if(_sales.Count>0) RenderCharts(_sales); } };
+                rb.CheckedChanged += (s, e) => { var rbCtrl = s as RadioButton; if (rbCtrl == null || !rbCtrl.Checked) return; if (rbCtrl.Tag is int w2) { _trendWindow = w2; if (_sales != null && _sales.Count > 0) RenderCharts(_sales); } }; if(me.Checked){ _trendWindow=(int)me.Tag; if(_sales.Count>0) RenderCharts(_sales); } };
                 _trendSwitch.Controls.Add(rb);
             }
             tools.Controls.Add(_trendSwitch);
