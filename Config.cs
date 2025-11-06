@@ -85,7 +85,14 @@ namespace StyleWatcherWin
             var json = JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(ConfigPath, json);
         }
-    }
+    
+        // Mock: 获取款式定级/最低价/保本价（假接口）
+        public static async System.Threading.Tasks.Task<string> QueryMockPriceAsync()
+        {
+            await System.Threading.Tasks.Task.Delay(100);
+            return "[\n    {\n        \"style_name\": \"通棉柔磨绒连卫\",\n        \"grade\": \"C\",\n        \"min_price_one\": \"119.9\",\n        \"breakeven_one\": \"113.0\"\n    }\n]";
+        }
+}
 
     public static class ApiHelper
     {
