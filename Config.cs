@@ -83,21 +83,7 @@ namespace StyleWatcherWin
             var json = JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(ConfigPath, json);
         }
-    
-        // Real: 从价格查询服务获取定级 / 最低价 / 保本价
-        public static async System.Threading.Tasks.Task<string> QueryLookupPriceAsync(string styleName)
-        {
-            var baseUrl = "http://192.168.40.97:8002/lookup?name=";
-            var url = baseUrl + System.Uri.EscapeDataString(styleName ?? string.Empty);
-            using var http = new System.Net.Http.HttpClient
-            {
-                Timeout = System.TimeSpan.FromSeconds(5)
-            };
-            var resp = await http.GetAsync(url);
-            resp.EnsureSuccessStatusCode();
-            return await resp.Content.ReadAsStringAsync();
-        }
-}
+    }
 
     public static class ApiHelper
     {

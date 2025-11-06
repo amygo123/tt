@@ -46,6 +46,9 @@ namespace StyleWatcherWin
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
         private readonly Panel _kpiMissing = new();
+        private readonly Panel _kpiGrade = new();
+        private readonly Panel _kpiMinPrice = new();
+        private readonly Panel _kpiBreakeven = new();
         private FlowLayoutPanel? _kpiMissingFlow;
 
         // Tabs
