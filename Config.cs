@@ -97,6 +97,58 @@ namespace StyleWatcherWin
                 {
                     Timeout = System.TimeSpan.FromSeconds(Math.Max(3, cfg.timeout_seconds))
                 };
+
+                var req = new System.Net.Http.HttpRequestMessage(
+                    new System.Net.Http.HttpMethod(cfg.method ?? "POST"),
+                    cfg.api_url ?? "");
+
+                // Content-Type from config (default application/json)
+                var contentType = cfg.headers?.Content_Type;
+                if (string.IsNullOrWhiteSpace(contentType)) contentType = "application/json";
+
+                var payload = $"{{\"{cfg.json_key}\":\"{text?.Replace("\\\\","\\\\\\\\").Replace("\"","\\\\\\\"")}\"}}";
+                req.Content = new System.Net.Http.StringContent(
+                    payload,
+                    System.Text.Encoding.UTF8,
+                    contentType);
+
+                // Optional Authorization header
+                var auth = cfg.headers?.Authorization;
+                if (!string.IsNullOrWhiteSpace(auth))
+                {
+                    if (!req.Headers.Contains("Authorization"))
+                        req.Headers.TryAddWithoutValidation("Authorization", auth);
+                }
+
+                var resp = await http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var reason = resp.ReasonPhrase ?? "Unknown";
+                    var status = (int)resp.StatusCode;
+                    string body = string.Empty;
+                    try { body = await resp.Content.ReadAsStringAsync(); } catch { }
+                    return $"请求失败：{status} {reason}" + (string.IsNullOrWhiteSpace(body) ? "" : $" | 响应：{(body.Length>200? body.Substring(0,200)+\"…\" : body)}");
+                }
+
+                var raw = await resp.Content.ReadAsStringAsync();
+
+                try
+                {
+                    var doc = System.Text.Json.JsonDocument.Parse(raw);
+                    if (doc.RootElement.TryGetProperty("msg", out var msgEl))
+                        return msgEl.ToString();
+                    return raw;
+                }
+                catch
+                {
+                    return raw;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                return $"请求失败：{ex.Message}";
+            }
+        };
                 var req = new System.Net.Http.HttpRequestMessage(
                     new System.Net.Http.HttpMethod(cfg.method ?? "POST"),
                     cfg.api_url ?? "");
