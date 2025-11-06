@@ -649,7 +649,7 @@ if (other > 0)
                 var btn = new Button { Text = name, AutoSize = false, Width = 110, Height = 24, Tag = name };
                 btn.Click += async (s,e)=> { var n = (s as Button)?.Tag as string; if (!string.IsNullOrWhiteSpace(n)) { try { await LoadAllForStyle(n).ConfigureAwait(false); } catch {} } };
                 var close = new Button { Text = "×", Width = 24, Height = 24, Tag = name };
-                close.Click += (s,e)=> { var n=(string)((Button)s).Tag; _history.RemoveAll(x=>string.Equals(x,n,StringComparison.OrdinalIgnoreCase)); RebuildHistoryBar(); };
+                close.Click += (s,e)=> { var n = (s as Button)?.Tag as string; if(!string.IsNullOrWhiteSpace(n)) { _history.RemoveAll(x=>string.Equals(x,n,StringComparison.OrdinalIgnoreCase)); RebuildHistoryBar(); } };
                 btn.FlatStyle = FlatStyle.Flat; close.FlatStyle = FlatStyle.Flat;
                 btn.Margin = new Padding(0); close.Margin = new Padding(6,0,0,0);
                 item.Controls.Add(btn); item.Controls.Add(close);
