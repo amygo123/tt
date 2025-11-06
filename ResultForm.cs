@@ -119,9 +119,9 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             
 // 新增：按需显示的三个占位 KPI 卡片（内容为 1、2、3）
-_kpi.Controls.Add(MakeKpi(new Panel(), "1", "1"));
-_kpi.Controls.Add(MakeKpi(new Panel(), "2", "2"));
-_kpi.Controls.Add(MakeKpi(new Panel(), "3", "3"));
+_kpi.Controls.Add(MakeKpi(_kpiGrade, "定级", "—"));
+_kpi.Controls.Add(MakeKpi(_kpiMinPrice, "最低价", "—"));
+_kpi.Controls.Add(MakeKpi(_kpiBreakeven, "保本价", "—"));
 content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -672,9 +672,6 @@ if (other > 0)
                 try { await _invPage.LoadInventoryAsync(styleName).ConfigureAwait(false); } catch { }
             }
             try { await LoadPriceAsync(styleName).ConfigureAwait(false); } catch { }
-            AddToHistory(styleName);
-        } catch {}
-            try { if(!string.IsNullOrWhiteSpace(styleName)) { _ = LoadPriceAsync(styleName); } } catch {}
             AddToHistory(styleName);
         }
 
