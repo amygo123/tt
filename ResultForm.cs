@@ -116,9 +116,9 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             
 // 新增：按需显示的三个占位 KPI 卡片（内容为 1、2、3）
-_kpi.Controls.Add(MakeKpi(new Panel(), "1", "1"));
-_kpi.Controls.Add(MakeKpi(new Panel(), "2", "2"));
-_kpi.Controls.Add(MakeKpi(new Panel(), "3", "3"));
+_kpi.Controls.Add(MakeKpi(_kpiGrade, "定级", "—"));
+_kpi.Controls.Add(MakeKpi(_kpiMinPrice, "最低价", "—"));
+_kpi.Controls.Add(MakeKpi(_kpiBreakeven, "保本价", "—"));
 content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -402,6 +402,7 @@ content.Controls.Add(_kpi,0,0);
             if (!string.IsNullOrWhiteSpace(styleName))
             {
                 try { _ = _invPage?.LoadInventoryAsync(styleName); } catch {}
+                try { _ = LoadPriceAsync(styleName); } catch {}
             }
         }
 
@@ -626,5 +627,44 @@ if (other > 0)
             wb.SaveAs(path);
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
         }
-    }
+    
+        private async System.Threading.Tasks.Task LoadPriceAsync(string styleName)
+        {
+            if (string.IsNullOrWhiteSpace(styleName))
+            {
+                SetKpiValue(_kpiGrade, "—");
+                SetKpiValue(_kpiMinPrice, "—");
+                SetKpiValue(_kpiBreakeven, "—");
+                return;
+            }
+            try
+            {
+                var json = await AppConfig.QueryLookupPriceAsync(styleName);
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var arr = doc.RootElement;
+                if (arr.ValueKind == System.Text.Json.JsonValueKind.Array && arr.GetArrayLength() > 0)
+                {
+                    var first = arr[0];
+                    var grade = first.TryGetProperty("grade", out var g) ? g.GetString() : "—";
+                    var minp = first.TryGetProperty("min_price_one", out var m) ? m.GetString() : "—";
+                    var brk = first.TryGetProperty("breakeven_one", out var b) ? b.GetString() : "—";
+                    SetKpiValue(_kpiGrade, grade ?? "—");
+                    SetKpiValue(_kpiMinPrice, minp ?? "—");
+                    SetKpiValue(_kpiBreakeven, brk ?? "—");
+                }
+                else
+                {
+                    SetKpiValue(_kpiGrade, "—");
+                    SetKpiValue(_kpiMinPrice, "—");
+                    SetKpiValue(_kpiBreakeven, "—");
+                }
+            }
+            catch
+            {
+                SetKpiValue(_kpiGrade, "—");
+                SetKpiValue(_kpiMinPrice, "—");
+                SetKpiValue(_kpiBreakeven, "—");
+            }
+        }
+}
 }
