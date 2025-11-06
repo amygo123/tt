@@ -694,47 +694,6 @@ if (other > 0)
         }
 
 
-        private async System.Threading.Tasks.Task LoadPriceAsync(string styleName)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(styleName))
-                {
-                    SetKpiValue(_kpiGrade, "—");
-                    SetKpiValue(_kpiMinPrice, "—");
-                    SetKpiValue(_kpiBreakeven, "—");
-                    return;
-                }
-                using var http = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromSeconds(5) };
-                var url = "http://192.168.40.97:8002/lookup?name=" + System.Uri.EscapeDataString(styleName);
-                var resp = await http.GetAsync(url);
-                resp.EnsureSuccessStatusCode();
-                var json = await resp.Content.ReadAsStringAsync();
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                var arr = doc.RootElement;
-                if (arr.ValueKind == System.Text.Json.JsonValueKind.Array && arr.GetArrayLength() > 0)
-                {
-                    var first = arr[0];
-                    var grade = first.TryGetProperty("grade", out var g) ? g.GetString() : "—";
-                    var minp  = first.TryGetProperty("min_price_one", out var m) ? m.GetString() : "—";
-                    var brk   = first.TryGetProperty("breakeven_one", out var b) ? b.GetString() : "—";
-                    SetKpiValue(_kpiGrade, grade ?? "—");
-                    SetKpiValue(_kpiMinPrice, minp  ?? "—");
-                    SetKpiValue(_kpiBreakeven, brk  ?? "—");
-                }
-                else
-                {
-                    SetKpiValue(_kpiGrade, "—");
-                    SetKpiValue(_kpiMinPrice, "—");
-                    SetKpiValue(_kpiBreakeven, "—");
-                }
-            }
-            catch
-            {
-                SetKpiValue(_kpiGrade, "—");
-                SetKpiValue(_kpiMinPrice, "—");
-                SetKpiValue(_kpiBreakeven, "—");
-            }
-        }
+        
 }
 }
