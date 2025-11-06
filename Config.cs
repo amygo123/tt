@@ -38,6 +38,8 @@ namespace StyleWatcherWin
             // 兼容 "Content-Type" 键名
             [JsonPropertyName("Content-Type")]
             public string Content_Type { get; set; } = "application/json";
+            // 可选：鉴权头，例如 "Bearer xxx" 或自定义 Token
+            public string Authorization { get; set; } = string.Empty;
         }
 
         public class InventoryCfg
@@ -138,7 +140,9 @@ namespace StyleWatcherWin
                 {
                     Timeout = System.TimeSpan.FromSeconds(Math.Max(3, cfg.timeout_seconds))
                 };
-                var raw = await http.GetStringAsync(url);
+                var resp = await http.GetAsync(url);
+                resp.EnsureSuccessStatusCode();
+                var raw = await resp.Content.ReadAsStringAsync();
                 return raw ?? "";
             }
             catch (System.Exception ex)

@@ -198,6 +198,7 @@ namespace StyleWatcherWin
 
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
                 var resp = await _http.SendAsync(req);
+                resp.EnsureSuccessStatusCode();
                 var raw = await resp.Content.ReadAsStringAsync();
 
                 // 兼容：JSON 数组字符串 或 纯文本行
