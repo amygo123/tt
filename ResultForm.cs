@@ -46,9 +46,9 @@ namespace StyleWatcherWin
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
         private readonly Panel _kpiMissing = new();
-        private readonly Panel _kpiGrade = new();
-        private readonly Panel _kpiMinPrice = new();
-        private readonly Panel _kpiBreakeven = new();
+        private readonly FlowLayoutPanel _historyBar = new();
+        private readonly System.Collections.Generic.List<string> _history = new();
+        private const int MaxHistory = 7;
         private FlowLayoutPanel? _kpiMissingFlow;
 
         // Tabs
@@ -88,8 +88,8 @@ namespace StyleWatcherWin
 
             Text = "StyleWatcher";
             Font = new Font("Microsoft YaHei UI", _cfg.window.fontSize);
-            Width = Math.Max(1600, _cfg.window.width);
-            Height = Math.Max(900, _cfg.window.height);
+            Width = Math.Max(1200, _cfg.window.width);
+            Height = Math.Max(800, _cfg.window.height);
             StartPosition = FormStartPosition.CenterScreen;
             TopMost = _cfg.window.alwaysOnTop;
             BackColor = Color.White;
@@ -119,9 +119,9 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             
 // 新增：按需显示的三个占位 KPI 卡片（内容为 1、2、3）
-_kpi.Controls.Add(MakeKpi(_kpiGrade, "定级", "—"));
-_kpi.Controls.Add(MakeKpi(_kpiMinPrice, "最低价", "—"));
-_kpi.Controls.Add(MakeKpi(_kpiBreakeven, "保本价", "—"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "1", "1"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "2", "2"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "3", "3"));
 content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -165,7 +165,7 @@ content.Controls.Add(_kpi,0,0);
             inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            var t = new Label { Text = title, Dock = DockStyle.Fill, Height = 26, Font = new Font("Microsoft YaHei UI", 10), TextAlign = ContentAlignment.MiddleLeft };
+            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=Color.FromArgb(47,47,47),Font=new Font("Microsoft YaHei UI", 10),TextAlign=ContentAlignment.MiddleLeft};
             var v=new Label{Text=value,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI", 16, FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(0,2,0,0)};
             v.Name = "ValueLabel";
 
@@ -186,7 +186,7 @@ content.Controls.Add(_kpi,0,0);
             inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            var t = new Label { Text = title, Dock = DockStyle.Fill, Height = 26, Font = new Font("Microsoft YaHei UI", 10), TextAlign = ContentAlignment.MiddleLeft };
+            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=Color.FromArgb(47,47,47),Font=new Font("Microsoft YaHei UI", 10),TextAlign=ContentAlignment.MiddleLeft};
 
             var flow = new FlowLayoutPanel{
                 Dock = DockStyle.Fill,
@@ -378,7 +378,7 @@ content.Controls.Add(_kpi,0,0);
             SetKpiValue(_kpiSales7, sales7.ToString());
 
             // 缺失尺码 chips（按销售基线）
-            SetMissingSizes(MissingSizes(_sales.Select(s=>s.Size), _invPage?.OfferedSizes() ?? System.Linq.Enumerable.Empty<string>(), _invPage?.CurrentZeroSizes() ?? System.Linq.Enumerable.Empty<string>()));
+            SetMissingSizes(MissingSizes(_sales.Select(s=>s.Size)));
 
             RenderCharts(_sales);
 
@@ -405,7 +405,6 @@ content.Controls.Add(_kpi,0,0);
             if (!string.IsNullOrWhiteSpace(styleName))
             {
                 try { _ = _invPage?.LoadInventoryAsync(styleName); } catch {}
-                try { _ = LoadPriceAsync(styleName); } catch {}
             }
         }
 
@@ -487,22 +486,13 @@ if (other > 0)
             _plotWarehouse.Model = model;
         }
 
-        private static IEnumerable<string> MissingSizes(
-            IEnumerable<string> _sizesFromSales,
-            IEnumerable<string> sizesOfferedFromInv,
-            IEnumerable<string> sizesZeroFromInv)
+        private static IEnumerable<string> MissingSizes(IEnumerable<string> sizes)
         {
-            if (sizesOfferedFromInv == null || sizesZeroFromInv == null)
-                yield break;
-
-            var offered = new HashSet<string>(sizesOfferedFromInv.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
-            var zeros   = new HashSet<string>(sizesZeroFromInv.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
-
-            foreach (var s in offered)
-                if (zeros.Contains(s))
-                    yield return s;
+            var set = new HashSet<string>(sizes.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+            var baseline = new []{"XS","S","M","L","XL","2XL","3XL","4XL","5XL","6XL","KXL","K2XL","K3XL","K4XL"};
+            foreach (var s in baseline)
+                if (!set.Contains(s)) yield return s;
         }
-        
 
         private static List<Aggregations.SalesItem> CleanSalesForVisuals(IEnumerable<Aggregations.SalesItem> src)
         {
@@ -529,7 +519,7 @@ if (other > 0)
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
 
-            if (_cfg.ui?.showMovingAverage ?? false)
+            if (_cfg.ui?.showMovingAverage ?? true)
             {
                 var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
                 var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
@@ -623,7 +613,7 @@ if (other > 0)
             for(int i=0;i<series.Count;i++){
                 ws2.Cell(rr,1).Value=series[i].day.ToString("yyyy-MM-dd");
                 ws2.Cell(rr,2).Value=series[i].qty;
-                ws2.Cell(rr,3).Value=(_cfg.ui?.showMovingAverage ?? false) ? ma[i] : 0;
+                ws2.Cell(rr,3).Value=(_cfg.ui?.showMovingAverage ?? true) ? ma[i] : 0;
                 rr++;
             }
             ws2.Columns().AdjustToContents();
@@ -631,7 +621,7 @@ if (other > 0)
             // 口径说明
             var ws3 = wb.AddWorksheet("口径说明");
             ws3.Cell(1,1).Value="趋势窗口（天）"; ws3.Cell(1,2).Value=_trendWindow;
-            ws3.Cell(2,1).Value="是否显示MA7"; ws3.Cell(2,2).Value=(_cfg.ui?.showMovingAverage ?? false) ? "是" : "否";
+            ws3.Cell(2,1).Value="是否显示MA7"; ws3.Cell(2,2).Value=(_cfg.ui?.showMovingAverage ?? true) ? "是" : "否";
             ws3.Cell(3,1).Value="库存天数阈值"; ws3.Cell(3,2).Value=$"红<{_cfg.inventoryAlert?.docRed ?? 3}，黄<{_cfg.inventoryAlert?.docYellow ?? 7}";
             ws3.Cell(4,1).Value="销量基线天数"; ws3.Cell(4,2).Value=_cfg.inventoryAlert?.minSalesWindowDays ?? 7;
             ws3.Columns().AdjustToContents();
@@ -639,61 +629,48 @@ if (other > 0)
             wb.SaveAs(path);
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
         }
-    
-
-        
-
-        
-
-        
-
-        
-    
-
-        private async System.Threading.Tasks.Task LoadPriceAsync(string styleName)
+        private void AddToHistory(string styleName)
         {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(styleName))
-                {
-                    SetKpiValue(_kpiGrade, "—");
-                    SetKpiValue(_kpiMinPrice, "—");
-                    SetKpiValue(_kpiBreakeven, "—");
-                    return;
-                }
-                using var http = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromSeconds(5) };
-                var url = "http://192.168.40.97:8002/lookup?name=" + System.Uri.EscapeDataString(styleName);
-                var resp = await http.GetAsync(url);
-                resp.EnsureSuccessStatusCode();
-                var json = await resp.Content.ReadAsStringAsync();
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                var arr = doc.RootElement;
-                if (arr.ValueKind == System.Text.Json.JsonValueKind.Array && arr.GetArrayLength() > 0)
-                {
-                    var first = arr[0];
-                    var grade = first.TryGetProperty("grade", out var g) ? g.GetString() : "—";
-                    var minp  = first.TryGetProperty("min_price_one", out var m) ? m.GetString() : "—";
-                    var brk   = first.TryGetProperty("breakeven_one", out var b) ? b.GetString() : "—";
-                    SetKpiValue(_kpiGrade, grade ?? "—");
-                    SetKpiValue(_kpiMinPrice, minp  ?? "—");
-                    SetKpiValue(_kpiBreakeven, brk  ?? "—");
-                }
-                else
-                {
-                    SetKpiValue(_kpiGrade, "—");
-                    SetKpiValue(_kpiMinPrice, "—");
-                    SetKpiValue(_kpiBreakeven, "—");
-                }
-            }
-            catch
-            {
-                SetKpiValue(_kpiGrade, "—");
-                SetKpiValue(_kpiMinPrice, "—");
-                SetKpiValue(_kpiBreakeven, "—");
-            }
+            if (string.IsNullOrWhiteSpace(styleName)) return;
+            _history.RemoveAll(s => string.Equals(s, styleName, StringComparison.OrdinalIgnoreCase));
+            _history.Add(styleName);
+            while (_history.Count > MaxHistory) _history.RemoveAt(0);
+            RebuildHistoryBar();
         }
 
+        private void RebuildHistoryBar()
+        {
+            _historyBar.SuspendLayout();
+            _historyBar.Controls.Clear();
 
-        
-}
+            foreach (var name in _history)
+            {
+                var item = new Panel { Height = 24, Width = 140, Margin = new Padding(0,0,8,0) };
+                var btn = new Button { Text = name, AutoSize = false, Width = 110, Height = 24, Tag = name };
+                btn.Click += (s,e)=> { try { _ = LoadAllForStyle((string)((Button)s).Tag); } catch {} };
+                var close = new Button { Text = "×", Width = 24, Height = 24, Tag = name };
+                close.Click += (s,e)=> { var n=(string)((Button)s).Tag; _history.RemoveAll(x=>string.Equals(x,n,StringComparison.OrdinalIgnoreCase)); RebuildHistoryBar(); };
+                btn.FlatStyle = FlatStyle.Flat; close.FlatStyle = FlatStyle.Flat;
+                btn.Margin = new Padding(0); close.Margin = new Padding(6,0,0,0);
+                item.Controls.Add(btn); item.Controls.Add(close);
+                btn.Location = new Point(0,0); close.Location = new Point(112,0);
+                _historyBar.Controls.Add(item);
+            }
+
+            var clear = new Button { Text = "清空", AutoSize = true };
+            clear.Click += (s,e)=> { _history.Clear(); RebuildHistoryBar(); };
+            _historyBar.Controls.Add(clear);
+
+            _historyBar.ResumeLayout();
+        }
+
+        private async System.Threading.Tasks.Task LoadAllForStyle(string styleName)
+        {
+            if (string.IsNullOrWhiteSpace(styleName)) return;
+            try { _ = _invPage?.LoadInventoryAsync(styleName); } catch {}
+            try { _ = LoadPriceAsync(styleName); } catch {}
+            AddToHistory(styleName);
+        }
+
+    }
 }
