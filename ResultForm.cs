@@ -88,8 +88,8 @@ namespace StyleWatcherWin
 
             Text = "StyleWatcher";
             Font = new Font("Microsoft YaHei UI", _cfg.window.fontSize);
-            Width = Math.Max(1200, _cfg.window.width);
-            Height = Math.Max(800, _cfg.window.height);
+            Width = Math.Max(1600, _cfg.window.width);
+            Height = Math.Max(900, _cfg.window.height);
             StartPosition = FormStartPosition.CenterScreen;
             TopMost = _cfg.window.alwaysOnTop;
             BackColor = Color.White;
@@ -165,7 +165,7 @@ content.Controls.Add(_kpi,0,0);
             inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=Color.FromArgb(47,47,47),Font=new Font("Microsoft YaHei UI", 10),TextAlign=ContentAlignment.MiddleLeft};
+            var t = new Label { Text = title, Dock = DockStyle.Fill, Height = 26, Font = new Font("Microsoft YaHei UI", 10), TextAlign = ContentAlignment.MiddleLeft };
             var v=new Label{Text=value,Dock=DockStyle.Fill,Font=new Font("Microsoft YaHei UI", 16, FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(0,2,0,0)};
             v.Name = "ValueLabel";
 
@@ -186,7 +186,7 @@ content.Controls.Add(_kpi,0,0);
             inner.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             inner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            var t=new Label{Text=title,Dock=DockStyle.Fill,Height=28,ForeColor=Color.FromArgb(47,47,47),Font=new Font("Microsoft YaHei UI", 10),TextAlign=ContentAlignment.MiddleLeft};
+            var t = new Label { Text = title, Dock = DockStyle.Fill, Height = 26, Font = new Font("Microsoft YaHei UI", 10), TextAlign = ContentAlignment.MiddleLeft };
 
             var flow = new FlowLayoutPanel{
                 Dock = DockStyle.Fill,
@@ -529,7 +529,7 @@ if (other > 0)
             foreach(var (day,qty) in series) line.Points.Add(new DataPoint(DateTimeAxis.ToDouble(day), qty));
             modelTrend.Series.Add(line);
 
-            if (_cfg.ui?.showMovingAverage ?? true)
+            if (_cfg.ui?.showMovingAverage ?? false)
             {
                 var ma = Aggregations.MovingAverage(series.Select(x=> (double)x.qty).ToList(), 7);
                 var maSeries = new LineSeries{ LineStyle=LineStyle.Dash, Title="MA7" };
@@ -623,7 +623,7 @@ if (other > 0)
             for(int i=0;i<series.Count;i++){
                 ws2.Cell(rr,1).Value=series[i].day.ToString("yyyy-MM-dd");
                 ws2.Cell(rr,2).Value=series[i].qty;
-                ws2.Cell(rr,3).Value=(_cfg.ui?.showMovingAverage ?? true) ? ma[i] : 0;
+                ws2.Cell(rr,3).Value=(_cfg.ui?.showMovingAverage ?? false) ? ma[i] : 0;
                 rr++;
             }
             ws2.Columns().AdjustToContents();
@@ -631,7 +631,7 @@ if (other > 0)
             // 口径说明
             var ws3 = wb.AddWorksheet("口径说明");
             ws3.Cell(1,1).Value="趋势窗口（天）"; ws3.Cell(1,2).Value=_trendWindow;
-            ws3.Cell(2,1).Value="是否显示MA7"; ws3.Cell(2,2).Value=(_cfg.ui?.showMovingAverage ?? true) ? "是" : "否";
+            ws3.Cell(2,1).Value="是否显示MA7"; ws3.Cell(2,2).Value=(_cfg.ui?.showMovingAverage ?? false) ? "是" : "否";
             ws3.Cell(3,1).Value="库存天数阈值"; ws3.Cell(3,2).Value=$"红<{_cfg.inventoryAlert?.docRed ?? 3}，黄<{_cfg.inventoryAlert?.docYellow ?? 7}";
             ws3.Cell(4,1).Value="销量基线天数"; ws3.Cell(4,2).Value=_cfg.inventoryAlert?.minSalesWindowDays ?? 7;
             ws3.Columns().AdjustToContents();
