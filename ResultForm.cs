@@ -405,6 +405,7 @@ content.Controls.Add(_kpi,0,0);
             if (!string.IsNullOrWhiteSpace(styleName))
             {
                 try { _ = _invPage?.LoadInventoryAsync(styleName); } catch {}
+                try { _ = LoadPriceAsync(styleName); } catch {}
             }
         }
 
@@ -487,17 +488,15 @@ if (other > 0)
         }
 
         private static IEnumerable<string> MissingSizes(
-            IEnumerable<string> sizesFromSales,
+            IEnumerable<string> _sizesFromSales,
             IEnumerable<string> sizesOfferedFromInv,
             IEnumerable<string> sizesZeroFromInv)
         {
-            // 基线尺码 = 该款库存提供的尺码（去重）
-            // 缺码 = 基线 ∩ 可用量为 0
             if (sizesOfferedFromInv == null || sizesZeroFromInv == null)
                 yield break;
 
-            var offered = new HashSet<string>(sizesOfferedFromInv.Where(s => !string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
-            var zeros   = new HashSet<string>(sizesZeroFromInv.Where(s => !string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+            var offered = new HashSet<string>(sizesOfferedFromInv.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+            var zeros   = new HashSet<string>(sizesZeroFromInv.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
 
             foreach (var s in offered)
                 if (zeros.Contains(s))
@@ -649,5 +648,93 @@ if (other > 0)
         
 
         
-    }
+    
+
+        private async System.Threading.Tasks.Task LoadPriceAsync(string styleName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(styleName))
+                {
+                    SetKpiValue(_kpiGrade, "—");
+                    SetKpiValue(_kpiMinPrice, "—");
+                    SetKpiValue(_kpiBreakeven, "—");
+                    return;
+                }
+                using var http = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromSeconds(5) };
+                var url = "http://192.168.40.97:8002/lookup?name=" + System.Uri.EscapeDataString(styleName);
+                var resp = await http.GetAsync(url);
+                resp.EnsureSuccessStatusCode();
+                var json = await resp.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var arr = doc.RootElement;
+                if (arr.ValueKind == System.Text.Json.JsonValueKind.Array && arr.GetArrayLength() > 0)
+                {
+                    var first = arr[0];
+                    var grade = first.TryGetProperty("grade", out var g) ? g.GetString() : "—";
+                    var minp  = first.TryGetProperty("min_price_one", out var m) ? m.GetString() : "—";
+                    var brk   = first.TryGetProperty("breakeven_one", out var b) ? b.GetString() : "—";
+                    SetKpiValue(_kpiGrade, grade ?? "—");
+                    SetKpiValue(_kpiMinPrice, minp  ?? "—");
+                    SetKpiValue(_kpiBreakeven, brk  ?? "—");
+                }
+                else
+                {
+                    SetKpiValue(_kpiGrade, "—");
+                    SetKpiValue(_kpiMinPrice, "—");
+                    SetKpiValue(_kpiBreakeven, "—");
+                }
+            }
+            catch
+            {
+                SetKpiValue(_kpiGrade, "—");
+                SetKpiValue(_kpiMinPrice, "—");
+                SetKpiValue(_kpiBreakeven, "—");
+            }
+        }
+
+
+        private async System.Threading.Tasks.Task LoadPriceAsync(string styleName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(styleName))
+                {
+                    SetKpiValue(_kpiGrade, "—");
+                    SetKpiValue(_kpiMinPrice, "—");
+                    SetKpiValue(_kpiBreakeven, "—");
+                    return;
+                }
+                using var http = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromSeconds(5) };
+                var url = "http://192.168.40.97:8002/lookup?name=" + System.Uri.EscapeDataString(styleName);
+                var resp = await http.GetAsync(url);
+                resp.EnsureSuccessStatusCode();
+                var json = await resp.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var arr = doc.RootElement;
+                if (arr.ValueKind == System.Text.Json.JsonValueKind.Array && arr.GetArrayLength() > 0)
+                {
+                    var first = arr[0];
+                    var grade = first.TryGetProperty("grade", out var g) ? g.GetString() : "—";
+                    var minp  = first.TryGetProperty("min_price_one", out var m) ? m.GetString() : "—";
+                    var brk   = first.TryGetProperty("breakeven_one", out var b) ? b.GetString() : "—";
+                    SetKpiValue(_kpiGrade, grade ?? "—");
+                    SetKpiValue(_kpiMinPrice, minp  ?? "—");
+                    SetKpiValue(_kpiBreakeven, brk  ?? "—");
+                }
+                else
+                {
+                    SetKpiValue(_kpiGrade, "—");
+                    SetKpiValue(_kpiMinPrice, "—");
+                    SetKpiValue(_kpiBreakeven, "—");
+                }
+            }
+            catch
+            {
+                SetKpiValue(_kpiGrade, "—");
+                SetKpiValue(_kpiMinPrice, "—");
+                SetKpiValue(_kpiBreakeven, "—");
+            }
+        }
+}
 }
