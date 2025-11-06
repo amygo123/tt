@@ -89,6 +89,7 @@ namespace StyleWatcherWin
 
     public static class ApiHelper
     {
+        
         public static async System.Threading.Tasks.Task<string> QueryAsync(AppConfig cfg, string text)
         {
             try
@@ -100,19 +101,20 @@ namespace StyleWatcherWin
 
                 var req = new System.Net.Http.HttpRequestMessage(
                     new System.Net.Http.HttpMethod(cfg.method ?? "POST"),
-                    cfg.api_url ?? "");
+                    cfg.api_url ?? string.Empty);
 
-                // Content-Type from config (default application/json)
+                // Build JSON payload via serializer to avoid manual escaping
+                var key = cfg.json_key ?? "code";
+                var payload = System.Text.Json.JsonSerializer.Serialize(new System.Collections.Generic.Dictionary<string, string>
+                {
+                    [key] = text ?? string.Empty
+                });
+
                 var contentType = cfg.headers?.Content_Type;
                 if (string.IsNullOrWhiteSpace(contentType)) contentType = "application/json";
 
-                var payload = $"{{\"{cfg.json_key}\":\"{text?.Replace("\\\\","\\\\\\\\").Replace("\"","\\\\\\\"")}\"}}";
-                req.Content = new System.Net.Http.StringContent(
-                    payload,
-                    System.Text.Encoding.UTF8,
-                    contentType);
+                req.Content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, contentType);
 
-                // Optional Authorization header
                 var auth = cfg.headers?.Authorization;
                 if (!string.IsNullOrWhiteSpace(auth))
                 {
@@ -127,51 +129,22 @@ namespace StyleWatcherWin
                     var status = (int)resp.StatusCode;
                     string body = string.Empty;
                     try { body = await resp.Content.ReadAsStringAsync(); } catch { }
-                    return $"请求失败：{status} {reason}" + (string.IsNullOrWhiteSpace(body) ? "" : $" | 响应：{(body.Length>200? body.Substring(0,200)+\"…\" : body)}");
+                    if (!string.IsNullOrWhiteSpace(body) && body.Length > 200) body = body.Substring(0, 200) + "…";
+                    return $"请求失败：{status} {reason}" + (string.IsNullOrWhiteSpace(body) ? "" : $" | 响应：{body}");
                 }
 
                 var raw = await resp.Content.ReadAsStringAsync();
 
                 try
                 {
-                    var doc = System.Text.Json.JsonDocument.Parse(raw);
+                    using var doc = System.Text.Json.JsonDocument.Parse(raw);
                     if (doc.RootElement.TryGetProperty("msg", out var msgEl))
                         return msgEl.ToString();
-                    return raw;
+                    return raw ?? string.Empty;
                 }
                 catch
                 {
-                    return raw;
-                }
-            }
-            catch (System.Exception ex)
-            {
-                return $"请求失败：{ex.Message}";
-            }
-        };
-                var req = new System.Net.Http.HttpRequestMessage(
-                    new System.Net.Http.HttpMethod(cfg.method ?? "POST"),
-                    cfg.api_url ?? "");
-
-                req.Content = new System.Net.Http.StringContent(
-                    $"{{\"{cfg.json_key}\":\"{text?.Replace("\\","\\\\").Replace("\"","\\\"")}\"}}",
-                    System.Text.Encoding.UTF8,
-                    "application/json");
-
-                var resp = await http.SendAsync(req);
-                var raw = await resp.Content.ReadAsStringAsync();
-
-                // 若返回 JSON 带 msg 字段，则优先取之
-                try
-                {
-                    var doc = System.Text.Json.JsonDocument.Parse(raw);
-                    if (doc.RootElement.TryGetProperty("msg", out var msgEl))
-                        return msgEl.ToString();
-                    return raw;
-                }
-                catch
-                {
-                    return raw;
+                    return raw ?? string.Empty;
                 }
             }
             catch (System.Exception ex)
@@ -179,6 +152,7 @@ namespace StyleWatcherWin
                 return $"请求失败：{ex.Message}";
             }
         }
+
 
         // A2: 查询库存（GET）
         public static async System.Threading.Tasks.Task<string> QueryInventoryAsync(AppConfig cfg, string styleName)
