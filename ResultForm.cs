@@ -504,16 +504,6 @@ if (other > 0)
 
             return missing;
         }
-            var salesSet = new HashSet<string>(sizesFromSales.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
-            var zeros = new HashSet<string>(sizesZeroFromInv ?? System.Linq.Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-            // 缺码 = 当前库存可用量为 0，且（在销售中出现过 或 属于基线尺码）
-            var cand = new HashSet<string>(baseline, StringComparer.OrdinalIgnoreCase);
-            foreach (var s in salesSet) cand.Add(s);
-            foreach (var s in cand)
-                if (zeros.Contains(s)) yield return s;
-        ;
-            foreach (var s in baseline)
-                if (!set.Contains(s)) yield return s;
         
 
         private static List<Aggregations.SalesItem> CleanSalesForVisuals(IEnumerable<Aggregations.SalesItem> src)
