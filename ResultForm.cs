@@ -631,7 +631,6 @@ if (other > 0)
             wb.SaveAs(path);
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
         }
-    }
 
         private async System.Threading.Tasks.Task LoadMockPriceAsync()
         {
