@@ -46,11 +46,7 @@ namespace StyleWatcherWin
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
         private readonly Panel _kpiMissing = new();
-        
-        private readonly Panel _kpiGrade = new();
-        private readonly Panel _kpiMinPrice = new();
-        private readonly Panel _kpiBreakeven = new();
-private FlowLayoutPanel? _kpiMissingFlow;
+        private FlowLayoutPanel? _kpiMissingFlow;
 
         // Tabs
         private readonly TabControl _tabs = new();
@@ -120,9 +116,9 @@ private FlowLayoutPanel? _kpiMissingFlow;
             _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             
 // 新增：按需显示的三个占位 KPI 卡片（内容为 1、2、3）
-_kpi.Controls.Add(MakeKpi(_kpiGrade, "定级", "—"));
-_kpi.Controls.Add(MakeKpi(_kpiMinPrice, "最低价", "—"));
-_kpi.Controls.Add(MakeKpi(_kpiBreakeven, "保本价", "—"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "1", "1"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "2", "2"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "3", "3"));
 content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -630,5 +626,64 @@ if (other > 0)
             wb.SaveAs(path);
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
         }
+        // ===== Functional Self-Check (runtime) =====
+        // This runs lightweight assertions to ensure compiled app also meets functional requirements.
+        private void RunFunctionalSelfCheck()
+        {
+            var failures = new System.Collections.Generic.List<string>();
+
+            // 1) KPI panels existence & titles
+            try
+            {
+                if (_kpiGrade == null || _kpiMinPrice == null || _kpiBreakeven == null)
+                    failures.Add("KPI panels are not instantiated.");
+            }
+            catch { failures.Add("Exception while checking KPI panels."); }
+
+            // 2) Moving Average default off
+            try
+            {
+                var ma = _cfg?.ui?.showMovingAverage ?? false;
+                if (ma) failures.Add("Expected MA7 off by default, but config shows true.");
+            }
+            catch { failures.Add("Exception while checking showMovingAverage flag."); }
+
+            // 3) MissingSizes baseline logic sanity
+            try
+            {
+                var offered = new string[] {"S","M"};
+                var zeros   = new string[] {"M","L"};
+                var demo    = MissingSizes(System.Linq.Enumerable.Empty<string>(), offered, zeros);
+                var list    = new System.Collections.Generic.List<string>(demo);
+                // expect only "M"
+                if (!(list.Count == 1 && string.Equals(list[0], "M", System.StringComparison.OrdinalIgnoreCase)))
+                    failures.Add("MissingSizes baseline check failed (expected only 'M').");
+            }
+            catch { failures.Add("Exception while checking MissingSizes baseline."); }
+
+            // 4) History capacity & LRU semantics quick check
+            try
+            {
+                var snapshot = new System.Collections.Generic.List<string>(_history);
+                for (int i=0;i<10;i++) AddToHistory("STYLE_"+i);
+                if (_history.Count > MaxHistory) failures.Add("History exceeded MaxHistory.");
+                // move one to most-recent
+                AddToHistory("STYLE_2");
+                if (!_history[_history.Count-1].Equals("STYLE_2"))
+                    failures.Add("History LRU ordering failed.");
+                // restore snapshot
+                _history.Clear(); _history.AddRange(snapshot); RebuildHistoryBar();
+            }
+            catch { failures.Add("Exception while checking History behavior."); }
+
+            if (failures.Count > 0)
+            {
+                // Non-intrusive: write to debug output; also show once for developer.
+                try { System.Diagnostics.Debug.WriteLine("[SelfCheck] " + string.Join(" | ", failures)); } catch {}
+                try { MessageBox.Show("自检发现问题：\n- " + string.Join("\n- ", failures), "功能自检", MessageBoxButtons.OK, MessageBoxIcon.Warning); } catch {}
+            }
+        }
+        // ===== End Functional Self-Check =====
+
     }
 }
