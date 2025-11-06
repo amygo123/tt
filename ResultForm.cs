@@ -46,6 +46,12 @@ namespace StyleWatcherWin
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
         private readonly Panel _kpiMissing = new();
+        private readonly Panel _kpiGrade = new();
+        private readonly Panel _kpiMinPrice = new();
+        private readonly Panel _kpiBreakeven = new();
+        private readonly FlowLayoutPanel _historyBar = new();
+        private readonly System.Collections.Generic.List<string> _history = new();
+        private const int MaxHistory = 7;
         private FlowLayoutPanel? _kpiMissingFlow;
 
         // Tabs
@@ -116,9 +122,9 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             
 // 新增：按需显示的三个占位 KPI 卡片（内容为 1、2、3）
-_kpi.Controls.Add(MakeKpi(new Panel(), "1", "1"));
-_kpi.Controls.Add(MakeKpi(new Panel(), "2", "2"));
-_kpi.Controls.Add(MakeKpi(new Panel(), "3", "3"));
+_kpi.Controls.Add(MakeKpi(_kpiGrade, "定级", "—"));
+_kpi.Controls.Add(MakeKpi(_kpiMinPrice, "最低价", "—"));
+_kpi.Controls.Add(MakeKpi(_kpiBreakeven, "保本价", "—"));
 content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -375,7 +381,7 @@ content.Controls.Add(_kpi,0,0);
             SetKpiValue(_kpiSales7, sales7.ToString());
 
             // 缺失尺码 chips（按销售基线）
-            SetMissingSizes(MissingSizes(_sales.Select(s=>s.Size)));
+            SetMissingSizes(MissingSizes(_sales.Select(s=>s.Size), _invPage?.OfferedSizes() ?? System.Linq.Enumerable.Empty<string>(), _invPage?.CurrentZeroSizes() ?? System.Linq.Enumerable.Empty<string>()));
 
             RenderCharts(_sales);
 
@@ -483,10 +489,21 @@ if (other > 0)
             _plotWarehouse.Model = model;
         }
 
-        private static IEnumerable<string> MissingSizes(IEnumerable<string> sizes)
+        private static IEnumerable<string> MissingSizes(
+            IEnumerable<string> _sizesFromSales,
+            IEnumerable<string> sizesOfferedFromInv,
+            IEnumerable<string> sizesZeroFromInv)
         {
-            var set = new HashSet<string>(sizes.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
-            var baseline = new []{"XS","S","M","L","XL","2XL","3XL","4XL","5XL","6XL","KXL","K2XL","K3XL","K4XL"};
+            if (sizesOfferedFromInv == null || sizesZeroFromInv == null)
+                yield break;
+
+            var offered = new HashSet<string>(sizesOfferedFromInv.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+            var zeros   = new HashSet<string>(sizesZeroFromInv.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var s in offered)
+                if (zeros.Contains(s))
+                    yield return s;
+        };
             foreach (var s in baseline)
                 if (!set.Contains(s)) yield return s;
         }
@@ -684,6 +701,52 @@ if (other > 0)
             }
         }
         // ===== End Functional Self-Check =====
+
+        private void AddToHistory(string styleName)
+        {
+            if (string.IsNullOrWhiteSpace(styleName)) return;
+            _history.RemoveAll(s => string.Equals(s, styleName, StringComparison.OrdinalIgnoreCase));
+            _history.Add(styleName);
+            while (_history.Count > MaxHistory) _history.RemoveAt(0);
+            RebuildHistoryBar();
+        }
+
+        private void RebuildHistoryBar()
+        {
+            _historyBar.SuspendLayout();
+            _historyBar.Controls.Clear();
+
+            foreach (var name in _history)
+            {
+                var item = new Panel { Height = 24, Width = 140, Margin = new Padding(0,0,8,0) };
+                var btn = new Button { Text = name, AutoSize = false, Width = 110, Height = 24, Tag = name };
+                btn.Click += async (s,e)=> { var n = (s as Button)?.Tag as string; if (!string.IsNullOrWhiteSpace(n)) { try { await LoadAllForStyle(n).ConfigureAwait(false); } catch {} } };
+                var close = new Button { Text = "×", Width = 24, Height = 24, Tag = name };
+                close.Click += (s,e)=> { var n = (s as Button)?.Tag as string; if(!string.IsNullOrWhiteSpace(n)) { _history.RemoveAll(x=>string.Equals(x,n,StringComparison.OrdinalIgnoreCase)); RebuildHistoryBar(); } };
+                btn.FlatStyle = FlatStyle.Flat; close.FlatStyle = FlatStyle.Flat;
+                btn.Margin = new Padding(0); close.Margin = new Padding(6,0,0,0);
+                item.Controls.Add(btn); item.Controls.Add(close);
+                btn.Location = new Point(0,0); close.Location = new Point(112,0);
+                _historyBar.Controls.Add(item);
+            }
+
+            var clear = new Button { Text = "清空", AutoSize = true };
+            clear.Click += (s,e)=> { _history.Clear(); RebuildHistoryBar(); };
+            _historyBar.Controls.Add(clear);
+
+            _historyBar.ResumeLayout();
+        }
+
+        private async System.Threading.Tasks.Task LoadAllForStyle(string styleName)
+        {
+            if (string.IsNullOrWhiteSpace(styleName)) return;
+            if (_invPage != null)
+            {
+                try { await _invPage.LoadInventoryAsync(styleName).ConfigureAwait(false); } catch { }
+            }
+            try { await LoadPriceAsync(styleName).ConfigureAwait(false); } catch { }
+            AddToHistory(styleName);
+        }
 
     }
 }
