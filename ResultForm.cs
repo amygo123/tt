@@ -46,9 +46,6 @@ namespace StyleWatcherWin
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
         private readonly Panel _kpiMissing = new();
-        private readonly Panel _kpiGrade = new();
-        private readonly Panel _kpiMinPrice = new();
-        private readonly Panel _kpiBreakeven = new();
         private FlowLayoutPanel? _kpiMissingFlow;
 
         // Tabs
@@ -119,11 +116,10 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             
 // 新增：按需显示的三个占位 KPI 卡片（内容为 1、2、3）
-_kpi.Controls.Add(MakeKpi(_kpiGrade, "定级", "—"));
-_kpi.Controls.Add(MakeKpi(_kpiMinPrice, "最低价", "—"));
-_kpi.Controls.Add(MakeKpi(_kpiBreakeven, "保本价", "—"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "1", "1"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "2", "2"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "3", "3"));
 content.Controls.Add(_kpi,0,0);
-            _ = LoadMockPriceAsync();
 
             _tabs.Dock = DockStyle.Fill;
             BuildTabs();
@@ -267,10 +263,9 @@ content.Controls.Add(_kpi,0,0);
             {
                 var rb=new RadioButton{Text=$"{w} 日",AutoSize=true,Tag=w,Margin=new Padding(0,2,18,0)};
                 if(w==_trendWindow) rb.Checked=true;
+                if(w==_trendWindow) rb.Checked=true;
                 rb.CheckedChanged += (s, e) => { var rbCtrl = s as RadioButton; if (rbCtrl == null || !rbCtrl.Checked) return; if (rbCtrl.Tag is int w2) { _trendWindow = w2; if (_sales != null && _sales.Count > 0) RenderCharts(_sales); } };
-            
-                _trendSwitch.Controls.Add(rb);
-}
+            }
             tools.Controls.Add(_trendSwitch);
 
             container.Controls.Add(tools,0,0);
@@ -631,31 +626,5 @@ if (other > 0)
             wb.SaveAs(path);
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
         }
-
-        private async System.Threading.Tasks.Task LoadMockPriceAsync()
-        {
-            try
-            {
-                var json = await AppConfig.QueryMockPriceAsync();
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                var arr = doc.RootElement;
-                if (arr.ValueKind == System.Text.Json.JsonValueKind.Array && arr.GetArrayLength() > 0)
-                {
-                    var first = arr[0];
-                    var grade = first.TryGetProperty("grade", out var g) ? g.GetString() : "—";
-                    var minp = first.TryGetProperty("min_price_one", out var m) ? m.GetString() : "—";
-                    var brk = first.TryGetProperty("breakeven_one", out var b) ? b.GetString() : "—";
-                    SetKpiValue(_kpiGrade, grade ?? "—");
-                    SetKpiValue(_kpiMinPrice, minp ?? "—");
-                    SetKpiValue(_kpiBreakeven, brk ?? "—");
-                }
-            }
-            catch
-            {
-                SetKpiValue(_kpiGrade, "—");
-                SetKpiValue(_kpiMinPrice, "—");
-                SetKpiValue(_kpiBreakeven, "—");
-            }
-        }
-}
+    }
 }

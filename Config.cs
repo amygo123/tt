@@ -38,8 +38,6 @@ namespace StyleWatcherWin
             // 兼容 "Content-Type" 键名
             [JsonPropertyName("Content-Type")]
             public string Content_Type { get; set; } = "application/json";
-            // 可选：鉴权头，例如 "Bearer xxx" 或自定义 Token
-            public string Authorization { get; set; } = string.Empty;
         }
 
         public class InventoryCfg
@@ -86,17 +84,23 @@ namespace StyleWatcherWin
             File.WriteAllText(ConfigPath, json);
         }
     
-        // Mock: 获取款式定级/最低价/保本价（假接口）
-        public static async System.Threading.Tasks.Task<string> QueryMockPriceAsync()
+        // Real: 从价格查询服务获取定级 / 最低价 / 保本价
+        public static async System.Threading.Tasks.Task<string> QueryLookupPriceAsync(string styleName)
         {
-            await System.Threading.Tasks.Task.Delay(100);
-            return "[\n    {\n        \"style_name\": \"通棉柔磨绒连卫\",\n        \"grade\": \"C\",\n        \"min_price_one\": \"119.9\",\n        \"breakeven_one\": \"113.0\"\n    }\n]";
+            var baseUrl = "http://192.168.40.97:8002/lookup?name=";
+            var url = baseUrl + System.Uri.EscapeDataString(styleName ?? string.Empty);
+            using var http = new System.Net.Http.HttpClient
+            {
+                Timeout = System.TimeSpan.FromSeconds(5)
+            };
+            var resp = await http.GetAsync(url);
+            resp.EnsureSuccessStatusCode();
+            return await resp.Content.ReadAsStringAsync();
         }
 }
 
     public static class ApiHelper
     {
-        
         public static async System.Threading.Tasks.Task<string> QueryAsync(AppConfig cfg, string text)
         {
             try
@@ -105,53 +109,29 @@ namespace StyleWatcherWin
                 {
                     Timeout = System.TimeSpan.FromSeconds(Math.Max(3, cfg.timeout_seconds))
                 };
-
                 var req = new System.Net.Http.HttpRequestMessage(
                     new System.Net.Http.HttpMethod(cfg.method ?? "POST"),
-                    cfg.api_url ?? string.Empty);
+                    cfg.api_url ?? "");
 
-                // Build JSON payload via serializer to avoid manual escaping
-                var key = cfg.json_key ?? "code";
-                var payload = System.Text.Json.JsonSerializer.Serialize(new System.Collections.Generic.Dictionary<string, string>
-                {
-                    [key] = text ?? string.Empty
-                });
-
-                var contentType = cfg.headers?.Content_Type;
-                if (string.IsNullOrWhiteSpace(contentType)) contentType = "application/json";
-
-                req.Content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, contentType);
-
-                var auth = cfg.headers?.Authorization;
-                if (!string.IsNullOrWhiteSpace(auth))
-                {
-                    if (!req.Headers.Contains("Authorization"))
-                        req.Headers.TryAddWithoutValidation("Authorization", auth);
-                }
+                req.Content = new System.Net.Http.StringContent(
+                    $"{{\"{cfg.json_key}\":\"{text?.Replace("\\","\\\\").Replace("\"","\\\"")}\"}}",
+                    System.Text.Encoding.UTF8,
+                    "application/json");
 
                 var resp = await http.SendAsync(req);
-                if (!resp.IsSuccessStatusCode)
-                {
-                    var reason = resp.ReasonPhrase ?? "Unknown";
-                    var status = (int)resp.StatusCode;
-                    string body = string.Empty;
-                    try { body = await resp.Content.ReadAsStringAsync(); } catch { }
-                    if (!string.IsNullOrWhiteSpace(body) && body.Length > 200) body = body.Substring(0, 200) + "…";
-                    return $"请求失败：{status} {reason}" + (string.IsNullOrWhiteSpace(body) ? "" : $" | 响应：{body}");
-                }
-
                 var raw = await resp.Content.ReadAsStringAsync();
 
+                // 若返回 JSON 带 msg 字段，则优先取之
                 try
                 {
-                    using var doc = System.Text.Json.JsonDocument.Parse(raw);
+                    var doc = System.Text.Json.JsonDocument.Parse(raw);
                     if (doc.RootElement.TryGetProperty("msg", out var msgEl))
                         return msgEl.ToString();
-                    return raw ?? string.Empty;
+                    return raw;
                 }
                 catch
                 {
-                    return raw ?? string.Empty;
+                    return raw;
                 }
             }
             catch (System.Exception ex)
@@ -159,7 +139,6 @@ namespace StyleWatcherWin
                 return $"请求失败：{ex.Message}";
             }
         }
-
 
         // A2: 查询库存（GET）
         public static async System.Threading.Tasks.Task<string> QueryInventoryAsync(AppConfig cfg, string styleName)
@@ -173,9 +152,7 @@ namespace StyleWatcherWin
                 {
                     Timeout = System.TimeSpan.FromSeconds(Math.Max(3, cfg.timeout_seconds))
                 };
-                var resp = await http.GetAsync(url);
-                resp.EnsureSuccessStatusCode();
-                var raw = await resp.Content.ReadAsStringAsync();
+                var raw = await http.GetStringAsync(url);
                 return raw ?? "";
             }
             catch (System.Exception ex)
