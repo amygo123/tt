@@ -642,7 +642,11 @@ if (other > 0)
             }
             try
             {
-                var json = await AppConfig.QueryLookupPriceAsync(styleName);
+                using var http = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromSeconds(5) };
+                var url = "http://192.168.40.97:8002/lookup?name=" + System.Uri.EscapeDataString(styleName ?? string.Empty);
+                var resp = await http.GetAsync(url);
+                resp.EnsureSuccessStatusCode();
+                var json = await resp.Content.ReadAsStringAsync();
                 using var doc = System.Text.Json.JsonDocument.Parse(json);
                 var arr = doc.RootElement;
                 if (arr.ValueKind == System.Text.Json.JsonValueKind.Array && arr.GetArrayLength() > 0)
