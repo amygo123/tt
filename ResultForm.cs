@@ -46,6 +46,9 @@ namespace StyleWatcherWin
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
         private readonly Panel _kpiMissing = new();
+        private readonly Panel _kpiGrade = new();
+        private readonly Panel _kpiMinPrice = new();
+        private readonly Panel _kpiBreakeven = new();
         private FlowLayoutPanel? _kpiMissingFlow;
 
         // Tabs
@@ -116,9 +119,9 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             
 // 新增：按需显示的三个占位 KPI 卡片（内容为 1、2、3）
-_kpi.Controls.Add(MakeKpi(new Panel(), "1", "1"));
-_kpi.Controls.Add(MakeKpi(new Panel(), "2", "2"));
-_kpi.Controls.Add(MakeKpi(new Panel(), "3", "3"));
+_kpi.Controls.Add(MakeKpi(_kpiGrade, "定级", "—"));
+_kpi.Controls.Add(MakeKpi(_kpiMinPrice, "最低价", "—"));
+_kpi.Controls.Add(MakeKpi(_kpiBreakeven, "保本价", "—"));
 content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -488,21 +491,17 @@ if (other > 0)
             IEnumerable<string> sizesOfferedFromInv,
             IEnumerable<string> sizesZeroFromInv)
         {
-            var salesSet = new HashSet<string>(sizesFromSales.Where(s => !string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
-            var offeredSet = new HashSet<string>(sizesOfferedFromInv ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-            var zeroSet = new HashSet<string>(sizesZeroFromInv ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            // 基线尺码 = 该款库存提供的尺码（去重）
+            // 缺码 = 基线 ∩ 可用量为 0
+            if (sizesOfferedFromInv == null || sizesZeroFromInv == null)
+                yield break;
 
-            var missing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var offered = new HashSet<string>(sizesOfferedFromInv.Where(s => !string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+            var zeros   = new HashSet<string>(sizesZeroFromInv.Where(s => !string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
 
-            // 1) 应该有却没货：在库存提供的尺码里，但可用量为 0
-            foreach (var s in offeredSet)
-                if (zeroSet.Contains(s)) missing.Add(s);
-
-            // 2) 有需求但没货：在销量中出现过，但库存里不存在该尺码；或者存在但可用量为 0
-            foreach (var s in salesSet)
-                if (!offeredSet.Contains(s) || zeroSet.Contains(s)) missing.Add(s);
-
-            return missing;
+            foreach (var s in offered)
+                if (zeros.Contains(s))
+                    yield return s;
         }
         
 
