@@ -38,6 +38,7 @@ namespace StyleWatcherWin
             // 兼容 "Content-Type" 键名
             [JsonPropertyName("Content-Type")]
             public string Content_Type { get; set; } = "application/json";
+            public string Authorization { get; set; } = string.Empty;
         }
 
         public class InventoryCfg
@@ -138,7 +139,9 @@ namespace StyleWatcherWin
                 {
                     Timeout = System.TimeSpan.FromSeconds(Math.Max(3, cfg.timeout_seconds))
                 };
-                var raw = await http.GetStringAsync(url);
+                var resp = await http.GetAsync(url);
+                resp.EnsureSuccessStatusCode();
+                var raw = await resp.Content.ReadAsStringAsync();
                 return raw ?? "";
             }
             catch (System.Exception ex)
@@ -146,5 +149,19 @@ namespace StyleWatcherWin
                 return $"[] // 请求失败：{ex.Message}";
             }
         }
+        // Real: 从价格查询服务获取定级 / 最低价 / 保本价
+        public static async System.Threading.Tasks.Task<string> QueryLookupPriceAsync(string styleName)
+        {
+            var baseUrl = "http://192.168.40.97:8002/lookup?name=";
+            var url = baseUrl + System.Uri.EscapeDataString(styleName ?? string.Empty);
+            using var http = new System.Net.Http.HttpClient
+            {
+                Timeout = System.TimeSpan.FromSeconds(Math.Max(3, 5))
+            };
+            var resp = await http.GetAsync(url);
+            resp.EnsureSuccessStatusCode();
+            return await resp.Content.ReadAsStringAsync();
+        }
+
     }
 }
