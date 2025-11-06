@@ -198,7 +198,6 @@ namespace StyleWatcherWin
 
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
                 var resp = await _http.SendAsync(req);
-                resp.EnsureSuccessStatusCode();
                 var raw = await resp.Content.ReadAsStringAsync();
 
                 // 兼容：JSON 数组字符串 或 纯文本行
@@ -636,6 +635,25 @@ namespace StyleWatcherWin
             };
         }
         #endregion
+        public System.Collections.Generic.IEnumerable<string> CurrentZeroSizes()
+        {
+            return _all.Rows
+                .GroupBy(r => r.Size)
+                .Select(g => new { s = g.Key, v = g.Sum(x => x.Available) })
+                .Where(x => !string.IsNullOrWhiteSpace(x.s) && x.v == 0)
+                .Select(x => x.s)
+                .ToList();
+        }
+
+        public System.Collections.Generic.IEnumerable<string> OfferedSizes()
+        {
+            return _all.Rows
+                .Select(r => r.Size)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
     }
 }
 #pragma warning restore 0618

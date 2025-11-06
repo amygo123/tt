@@ -46,9 +46,6 @@ namespace StyleWatcherWin
         private readonly Panel _kpiInv = new();
         private readonly Panel _kpiDoc = new();
         private readonly Panel _kpiMissing = new();
-        private readonly Panel _kpiGrade = new();
-        private readonly Panel _kpiMinPrice = new();
-        private readonly Panel _kpiBreakeven = new();
         private FlowLayoutPanel? _kpiMissingFlow;
 
         // Tabs
@@ -119,9 +116,9 @@ namespace StyleWatcherWin
             _kpi.Controls.Add(MakeKpiMissing(_kpiMissing,"缺货尺码"));
             
 // 新增：按需显示的三个占位 KPI 卡片（内容为 1、2、3）
-_kpi.Controls.Add(MakeKpi(_kpiGrade, "定级", "—"));
-_kpi.Controls.Add(MakeKpi(_kpiMinPrice, "最低价", "—"));
-_kpi.Controls.Add(MakeKpi(_kpiBreakeven, "保本价", "—"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "1", "1"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "2", "2"));
+_kpi.Controls.Add(MakeKpi(new Panel(), "3", "3"));
 content.Controls.Add(_kpi,0,0);
 
             _tabs.Dock = DockStyle.Fill;
@@ -378,7 +375,7 @@ content.Controls.Add(_kpi,0,0);
             SetKpiValue(_kpiSales7, sales7.ToString());
 
             // 缺失尺码 chips（按销售基线）
-            SetMissingSizes(MissingSizes(_sales.Select(s=>s.Size)));
+            SetMissingSizes(MissingSizes(_sales.Select(s=>s.Size), _invPage?.OfferedSizes() ?? System.Linq.Enumerable.Empty<string>(), _invPage?.CurrentZeroSizes() ?? System.Linq.Enumerable.Empty<string>()));
 
             RenderCharts(_sales);
 
@@ -405,7 +402,6 @@ content.Controls.Add(_kpi,0,0);
             if (!string.IsNullOrWhiteSpace(styleName))
             {
                 try { _ = _invPage?.LoadInventoryAsync(styleName); } catch {}
-                try { _ = LoadPriceAsync(styleName); } catch {}
             }
         }
 
@@ -487,10 +483,35 @@ if (other > 0)
             _plotWarehouse.Model = model;
         }
 
-        private static IEnumerable<string> MissingSizes(IEnumerable<string> sizes)
+        private static IEnumerable<string> MissingSizes(
+            IEnumerable<string> sizesFromSales,
+            IEnumerable<string> sizesOfferedFromInv,
+            IEnumerable<string> sizesZeroFromInv)
         {
-            var set = new HashSet<string>(sizes.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
-            var baseline = new []{"XS","S","M","L","XL","2XL","3XL","4XL","5XL","6XL","KXL","K2XL","K3XL","K4XL"};
+            var salesSet = new HashSet<string>(sizesFromSales.Where(s => !string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+            var offeredSet = new HashSet<string>(sizesOfferedFromInv ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            var zeroSet = new HashSet<string>(sizesZeroFromInv ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+
+            var missing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // 1) 应该有却没货：在库存提供的尺码里，但可用量为 0
+            foreach (var s in offeredSet)
+                if (zeroSet.Contains(s)) missing.Add(s);
+
+            // 2) 有需求但没货：在销量中出现过，但库存里不存在该尺码；或者存在但可用量为 0
+            foreach (var s in salesSet)
+                if (!offeredSet.Contains(s) || zeroSet.Contains(s)) missing.Add(s);
+
+            return missing;
+        };
+            var salesSet = new HashSet<string>(sizesFromSales.Where(s=>!string.IsNullOrWhiteSpace(s)), StringComparer.OrdinalIgnoreCase);
+            var zeros = new HashSet<string>(sizesZeroFromInv ?? System.Linq.Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            // 缺码 = 当前库存可用量为 0，且（在销售中出现过 或 属于基线尺码）
+            var cand = new HashSet<string>(baseline, StringComparer.OrdinalIgnoreCase);
+            foreach (var s in salesSet) cand.Add(s);
+            foreach (var s in cand)
+                if (zeros.Contains(s)) yield return s;
+        };
             foreach (var s in baseline)
                 if (!set.Contains(s)) yield return s;
         }
@@ -630,48 +651,5 @@ if (other > 0)
             wb.SaveAs(path);
             try{ System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\""); }catch{}
         }
-    
-        private async System.Threading.Tasks.Task LoadPriceAsync(string styleName)
-        {
-            if (string.IsNullOrWhiteSpace(styleName))
-            {
-                SetKpiValue(_kpiGrade, "—");
-                SetKpiValue(_kpiMinPrice, "—");
-                SetKpiValue(_kpiBreakeven, "—");
-                return;
-            }
-            try
-            {
-                using var http = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromSeconds(5) };
-                var url = "http://192.168.40.97:8002/lookup?name=" + System.Uri.EscapeDataString(styleName ?? string.Empty);
-                var resp = await http.GetAsync(url);
-                resp.EnsureSuccessStatusCode();
-                var json = await resp.Content.ReadAsStringAsync();
-                using var doc = System.Text.Json.JsonDocument.Parse(json);
-                var arr = doc.RootElement;
-                if (arr.ValueKind == System.Text.Json.JsonValueKind.Array && arr.GetArrayLength() > 0)
-                {
-                    var first = arr[0];
-                    var grade = first.TryGetProperty("grade", out var g) ? g.GetString() : "—";
-                    var minp = first.TryGetProperty("min_price_one", out var m) ? m.GetString() : "—";
-                    var brk = first.TryGetProperty("breakeven_one", out var b) ? b.GetString() : "—";
-                    SetKpiValue(_kpiGrade, grade ?? "—");
-                    SetKpiValue(_kpiMinPrice, minp ?? "—");
-                    SetKpiValue(_kpiBreakeven, brk ?? "—");
-                }
-                else
-                {
-                    SetKpiValue(_kpiGrade, "—");
-                    SetKpiValue(_kpiMinPrice, "—");
-                    SetKpiValue(_kpiBreakeven, "—");
-                }
-            }
-            catch
-            {
-                SetKpiValue(_kpiGrade, "—");
-                SetKpiValue(_kpiMinPrice, "—");
-                SetKpiValue(_kpiBreakeven, "—");
-            }
-        }
-}
+    }
 }
